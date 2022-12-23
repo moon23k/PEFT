@@ -1,8 +1,7 @@
 import os, re, json 
 import yaml, nltk, argparse
-import sentencepiece as spm
-from run import load_tokenizer
 from datasets import load_dataset
+from transformers import T5TokenizerFast
 
 
 
@@ -19,14 +18,19 @@ def load_data(task):
     return data
 
 
+
 #NMT
-def preprocess_nmt(orig_data, volumn=32000, min_len=10, max_len=300, max_diff=50):
+def process_nmt(orig_data, tokenizer, volumn=32000):
+    min_len = 10 
+    max_len = 300
+    max_diff = 50
+    prefix = 'translate English to German: '
+
     volumn_cnt = 0
-    concat, processed = [], []
+    processed = []
     
     for elem in orig_data:
-        temp_dict = dict()
-        src, trg = elem['en'], elem['de']
+        src, trg = elem['en'].lower(), elem['de'].lower()
         src_len, trg_len = len(src), len(trg)
 
         #define filtering conditions
@@ -35,27 +39,31 @@ def preprocess_nmt(orig_data, volumn=32000, min_len=10, max_len=300, max_diff=50
         dif_condition = abs(src_len - trg_len) < max_diff
 
         if max_condition & min_condition & dif_condition:
-            temp_dict['src'] = src.lower()
-            temp_dict['trg'] = trg.lower()
+            temp_dict = dict()
+            
+            src_tokenized = tokenizer(prefix + src, max_length=512, truncation=True)
+            trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
+
+            temp_dict['input_ids'] = src_tokenized['input_ids']
+            temp_dict['attention_mask'] = src_tokenized['attention_mask']
+            temp_dict['labels'] = trg_tokenized['input_ids']
+            
             processed.append(temp_dict)
-            concat.append(src + trg)
             
             #End condition
             volumn_cnt += 1
             if volumn_cnt == volumn:
                 break
 
-    with open('data/nmt/concat.txt', 'w') as f:
-        f.write('\n'.join(concat))
-
     return processed
 
 
+
 #Dialog
-def preprocess_dialog(orig_data, volumn=32000):
+def process_dialog(orig_data, tokenizer, volumn=32000):
     volumn_cnt = 0
     src_list, trg_list = [], []
-    concat, processed = [], []
+    processed = []
 
     for dial in orig_data:
         dial_list = []
@@ -91,32 +99,40 @@ def preprocess_dialog(orig_data, volumn=32000):
             trg_list.extend(dial_list[2::2])   
 
     assert len(src_list) == len(trg_list)
+    
     for src, trg in zip(src_list, trg_list):
         temp_dict = dict()
-        temp_dict['src'] = src
-        temp_dict['trg'] = trg
+        src_tokenized = tokenizer(src, max_length=512, truncation=True)
+        trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
+
+        temp_dict['input_ids'] = src_tokenized['input_ids']
+        temp_dict['attention_mask'] = src_tokenized['attention_mask']
+        temp_dict['labels'] = trg_tokenized['input_ids']
         
-        concat.append(src + trg)
         processed.append(temp_dict)
 
         #End Condition
         volumn_cnt += 1
         if volumn_cnt == volumn:
             break
-        
-    with open('data/dialog/concat.txt', 'w') as f:
-        f.write('\n'.join(concat))
     
     return processed
 
 
+
 #Sum
-def preprocess_sum(orig_data, volumn=32000, max_num=50, min_len=500, max_len=3000):
+def process_sum(orig_data, tokenizer, volumn=32000):    
+    max_num=30  
+    min_len=500 
+    max_len=2000
+    prefix = 'summarize: '
+
     volumn_cnt = 0
-    concat, processed = [], []
+    processed = []
 
     for elem in orig_data:
-        src, trg = elem['article'], elem['highlights']
+        prefix = 'summarize: '
+        src, trg = elem['article'].lower(), elem['highlights'].lower()
 
         #Filter too Short or too Long Context
         if not (min_len < len(src) < max_len):
@@ -132,65 +148,30 @@ def preprocess_sum(orig_data, volumn=32000, max_num=50, min_len=500, max_len=300
             if len(seq) > min_len:
                 continue
 
+        #Add Prefix and make it into long string obj 
+        src = prefix + ' '.join(src_split)
+
         #remove unnecessary characters in trg sequence
-        trg = re.sub(r'\n', ' ', trg)                 #remove \n
+        trg = re.sub(r'\n', ' ', trg.strip())         #remove \n
         trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
-
+        
         temp_dict = dict()
-        temp_dict['src'] = src_split
-        temp_dict['trg'] = trg
+        src_tokenized = tokenizer(prefix + src, max_length=512, truncation=True)
+        trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
 
-        concat.append(src + trg)
+        temp_dict['input_ids'] = src_tokenized['input_ids']
+        temp_dict['attention_mask'] = src_tokenized['attention_mask']
+        temp_dict['labels'] = trg_tokenized['input_ids']
+
         processed.append(temp_dict)
 
         volumn_cnt += 1
         if volumn_cnt == volumn:
             break
     
-    with open('data/sum/concat.txt', 'w') as f:
-        f.write('\n'.join(concat))
-    
     return processed
 
 
-def build_vocab(task):
-    assert os.path.exists('config.yaml')
-    with open('config.yaml', 'r') as f:
-        vocab_config = yaml.load(f, Loader=yaml.FullLoader)['vocab']
-
-    assert os.path.exists(f'data/{task}/concat.txt')
-    opt = f"--input=data/{task}/concat.txt\
-            --model_prefix=data/{task}/spm\
-            --vocab_size={vocab_config['vocab_size']}\
-            --character_coverage={vocab_config['coverage']}\
-            --model_type={vocab_config['type']}\
-            --pad_id={vocab_config['pad_id']} --pad_piece={vocab_config['pad_piece']}\
-            --unk_id={vocab_config['unk_id']} --unk_piece={vocab_config['unk_piece']}\
-            --bos_id={vocab_config['bos_id']} --bos_piece={vocab_config['bos_piece']}\
-            --eos_id={vocab_config['eos_id']} --eos_piece={vocab_config['eos_piece']}"
-
-    spm.SentencePieceTrainer.Train(opt)
-    os.remove(f'data/{task}/concat.txt')
-
-
-
-def tokenize_data(task, tokenized, tokenizer):
-    tokenized_data = []
-    for elem in tokenized:
-        temp_dict = dict()
-        
-        if task == 'sum':
-            temp = []
-            for seq in elem['src']:
-                temp.append(tokenizer.EncodeAsIds(seq))
-            temp_dict['src'] = temp
-        else:    
-            temp_dict['src'] = tokenizer.EncodeAsIds(elem['src'])
-        
-        temp_dict['trg'] = tokenizer.EncodeAsIds(elem['trg'])
-        tokenized_data.append(temp_dict)
-    
-    return tokenized_data
 
 
 def save_data(task, data_obj):
@@ -213,24 +194,19 @@ def main(task):
 
     #Load Original Data
     orig = load_data(task)
+    tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=512)
 
     #PreProcess Data
     if task == 'nmt':
-        processed = preprocess_nmt(orig)
+        processed = process_nmt(orig, tokenizer)
     elif task == 'dialog':
-        processed = preprocess_dialog(orig)
+        processed = process_dialog(orig, tokenizer)
     elif task == 'sum':
-        processed = preprocess_sum(orig)        
-
-    #Build Vocab
-    build_vocab(task)
-
-    #Tokenize Datasets
-    tokenizer = load_tokenizer(task)
-    tokenized = tokenize_data(task, processed, tokenizer)
+        processed = process_sum(orig, tokenizer)        
 
     #Save Data
-    save_data(task, tokenized)
+    save_data(task, processed)
+
 
 
 if __name__ == '__main__':

@@ -66,4 +66,5 @@ def load_dataloader(config, split):
                       batch_size=config.batch_size, 
                       shuffle=True,
                       collate_fn=base_collate,
-                      num_workers=2)
+                      num_workers=2,
+                      pin_memory=True)

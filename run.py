@@ -1,15 +1,16 @@
 import numpy as np
-import os, random, argparse, nltk
+import os, random, argparse
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-#from module.test import Tester
+from module.test import Tester
 from module.train import Trainer
 from module.data import load_dataloader
 
+from transformers import T5Config
 from transformers import T5TokenizerFast
 from transformers import T5ForConditionalGeneration
 
@@ -25,14 +26,18 @@ def set_seed(SEED=42):
 
 
 def load_model(config):
-    model = T5ForConditionalGeneration.from_pretrained('t5-small')
-    print("Pretrained T5-Small Model has loaded")
+    if config.mode == 'train':
+        model = T5ForConditionalGeneration.from_pretrained('t5-small')
+        print("Pretrained T5-Small Model has loaded")
     
     if config.mode != 'train':
         assert os.path.exists(config.ckpt)
+        model_config = T5Config.from_pretrained('t5-small')
+        model = T5ForConditionalGeneration(model_config)
+        print("Initialized T5-Small Model has loaded")
         model_state = torch.load(config.ckpt, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
-        print(f"Model states has loaded from {config.ckpt}")
+        print(f"Trained Model states has loaded from {config.ckpt}")
 
     def count_params(model):
         params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -52,7 +57,7 @@ def load_model(config):
 
     print(f"--- Model Params: {count_params(model):,}")
     print(f"--- Model  Size : {check_size(model):.3f} MB\n")
-    return model
+    return model.to(config.device)
 
 
 class Config(object):
@@ -64,7 +69,7 @@ class Config(object):
         self.clip = 1
         self.n_epochs = 10
         self.batch_size = 16
-        self.learning_rate = 5e-4
+        self.learning_rate = 5e-5
         self.iters_to_accumulate = 4
 
         use_cuda = torch.cuda.is_available()
@@ -88,29 +93,25 @@ class Config(object):
 
 
 def inference(config, model, tokenizer):
-    if config.task == 'sum':
-        nltk.download('punkt')
-
-    search_module = Search(config, model, tokenizer)
-
     print(f'--- Inference Process Started! ---')
     print('[ Type "quit" on user input to stop the Process ]')
     
     while True:
         input_seq = input('\nUser Input Sequence >> ').lower()
 
-        #Enc Condition
+        #End Condition
         if input_seq == 'quit':
             print('\n--- Inference Process has terminated! ---')
             break        
 
-        if config.task == 'sum':
-            input_seq = nltk.tokenize.sent_tokenize(input_seq)
+        #convert user input_seq into model input_ids
+        input_ids = tokenizer(input_seq)
 
+        #Search Output Sequence
         if config.search_method == 'beam':
-            output_seq = search_module.beam_search(input_seq)
+            output_seq = model.beam_search(input_ids)
         else:
-            output_seq = search_module.greedy_search(input_seq)
+            output_seq = model.greedy_search(input_ids)
         print(f"Model Out Sequence >> {output_seq}")       
 
 
@@ -119,6 +120,11 @@ def main(args):
     set_seed()
     config = Config(args)
     model = load_model(config)
+
+    setattr(config, 'pad_id', model.config.pad_token_id)
+    setattr(config, 'max_length', model.config.max_length)
+    setattr(config, 'num_beams', model.config.num_beams)
+
 
     if config.mode == 'train':
         train_dataloader = load_dataloader(config, 'train')

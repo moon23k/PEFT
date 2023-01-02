@@ -1,4 +1,4 @@
-import time, math, json, torch
+import gc, time, math, json, torch
 import torch.nn as nn
 import torch.amp as amp
 import torch.optim as optim
@@ -109,6 +109,9 @@ class Trainer:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad()
+   
+            gc.collect()
+            torch.cuda.empty_cache()
 
             epoch_loss += loss.item()
         
@@ -132,6 +135,10 @@ class Trainer:
                     loss = self.model(input_ids = input_ids, 
                                       attention_mask = attention_mask,
                                       labels = labels)[0]
+                
+                gc.collect()
+                torch.cuda.empty_cache()
+
                 epoch_loss += loss.item()
         
         epoch_loss = round(epoch_loss / tot_len, 3)

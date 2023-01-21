@@ -20,7 +20,7 @@ def load_data(task):
 
 
 #NMT
-def process_nmt(orig_data, tokenizer, volumn=32000):
+def process_nmt(orig_data, tokenizer, volumn=36000):
     min_len = 10 
     max_len = 300
     max_diff = 50
@@ -60,7 +60,7 @@ def process_nmt(orig_data, tokenizer, volumn=32000):
 
 
 #Dialog
-def process_dialog(orig_data, tokenizer, volumn=32000):
+def process_dialog(orig_data, tokenizer, volumn=36000):
     volumn_cnt = 0
     src_list, trg_list = [], []
     processed = []
@@ -121,7 +121,7 @@ def process_dialog(orig_data, tokenizer, volumn=32000):
 
 
 #Sum
-def process_sum(orig_data, tokenizer, volumn=32000):    
+def process_sum(orig_data, tokenizer, volumn=36000):    
     max_num=30  
     min_len=500 
     max_len=2000
@@ -176,7 +176,7 @@ def process_sum(orig_data, tokenizer, volumn=32000):
 
 def save_data(task, data_obj):
     #split data into train/valid/test sets
-    train, valid, test = data_obj[:-2000], data_obj[-2000:-1000], data_obj[-1000:]
+    train, valid, test = data_obj[:-6000], data_obj[-6000:-3000], data_obj[-3000:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
     for key, val in data_dict.items():

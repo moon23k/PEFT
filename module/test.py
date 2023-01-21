@@ -1,8 +1,8 @@
-import torch, math, time
+import torch, math, time, evaluate
 import torch.nn as nn
 import torch.nn.functional as F
-from datasets import load_metric
 from transformers import BertModel, BertTokenizerFast
+
 
 
 class Tester:
@@ -20,7 +20,7 @@ class Tester:
         
         if self.task == 'nmt':
             self.metric_name = 'BLEU'
-            self.metric_module = load_metric('bleu')
+            self.metric_module = evaluate.load('bleu')
 
         elif self.task == 'dialog':
             self.metric_name = 'Similarity'
@@ -29,28 +29,7 @@ class Tester:
         
         elif self.task == 'sum':
             self.metric_name = 'ROUGE'
-            self.metric_module = load_metric('rouge')
-
-
-    def loss_test(self):
-        tot_loss = 0.0
-        
-        with torch.no_grad():
-            for _, batch in enumerate(self.dataloader):
-                input_ids = batch['input_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['labels'].to(self.device)                
-                
-                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
-                    loss = self.model(input_ids = input_ids, 
-                                      attention_mask = attention_mask,
-                                      labels = labels)[0]
-
-                tot_loss += loss
-            tot_loss /= len(self.dataloader)
-        
-        print(f'Loss Test Results on {self.task} Task')
-        print(f">> Loss: {tot_loss:.3f} | PPL: {math.exp(tot_loss):.2f}\n")
+            self.metric_module = load('rouge')
 
 
     
@@ -75,52 +54,32 @@ class Tester:
         return score * 100
 
 
-    def metric_test(self):
-        metric_results = []
-        batch = next(iter(self.dataloader))
+
+
+    def test(self):
+        self.model.eval()
         
-        input_ids = batch['input_ids'].to(self.device)
-        attention_mask = batch['attention_mask'].to(self.device)
-        labels = batch['labels'].to(self.device)
-        labels[labels ==-100] = 0
+        start_time = time.time()
+        with torch.no_grad():
+            for _, batch in tqdm(enumerate(self.dataloader)):   
+                
+                input_ids = batch['input_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+                labels[labels ==-100] = 0
+                                
+                preds = self.model.generate(input_ids=input_ids, attention_mask=attention_mask,
+                                            max_new_tokens=300, use_cache=True)
+                
+                preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
+                labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        greedy_pred = self.model.generate(input_ids=input_ids, 
-                                          attention_mask=attention_mask, 
-                                          max_length=512)
-        beam_pred = self.model.generate(input_ids=input_ids, 
-                                        attention_mask=attention_mask, 
-                                        max_length=512, 
-                                        num_beams=4)
+                metric_module.add_batch(predictions=preds, 
+                                        references=[[l] for l in labels])    
 
-        for idx in range(self.batch_size):
-            temp_dict = dict()
+        bleu_score = metric_module.compute()['bleu'] * 100
 
-            temp_dict['input_seq'] = self.tokenizer.decode(input_ids[idx], skip_special_tokens=True)
-            temp_dict['label_seq'] = self.tokenizer.decode(labels[idx], skip_special_tokens=True)
+        print('Test Results')
+        print(f"  >> {self.metric_name} Score: {bleu_score:.2f}")
+        print(f"  >> Spent Time: {self.measure_time(start_time, time.time())}")
 
-            temp_dict['greedy_pred'] = self.tokenizer.decode(greedy_pred[idx], skip_special_tokens=True)
-            temp_dict['beam_pred'] = self.tokenizer.decode(beam_pred[idx], skip_special_tokens=True)
-
-            temp_dict['greedy_metric'] = self.metric_score(temp_dict['greedy_pred'], temp_dict['label_seq'])
-            temp_dict['beam_metric'] = self.metric_score(temp_dict['beam_pred'], temp_dict['label_seq'])
-            
-            metric_results.append(temp_dict)
-        
-        metric_results = sorted(metric_results, key=lambda d: d['beam_metric'])
-        
-        #print_dicts takes only three elems from metric_results
-        print_dicts = [metric_results[0]] + \
-                      [metric_results[self.batch_size // 2]] + \
-                      [metric_results[-1]]
-
-
-        print(f'Metric Test on {self.task} model')
-        for d in print_dicts:
-            print(f">> Input Sequence: {d['input_seq']}")
-            print(f">> Label Sequence: {d['label_seq']}")
-            
-            print(f">> Greedy Sequence: {d['greedy_pred']}")
-            print(f">> Beam   Sequence : {d['beam_pred']}")
-            
-            print(f">> Greedy {self.metric_name.upper()} Score: {d['greedy_metric']:.2f}")
-            print(f">> Beam   {self.metric_name.upper()} Score : {d['beam_metric']:.2f}\n")

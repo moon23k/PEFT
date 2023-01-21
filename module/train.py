@@ -20,10 +20,7 @@ class Trainer:
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
-        self.optimizer = optim.Adam(self.model.parameters(), 
-                                    lr=config.learning_rate, 
-                                    betas=(0.9, 0.98), 
-                                    eps=1e-8)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min')
         
         self.ckpt = config.ckpt
@@ -93,8 +90,8 @@ class Trainer:
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                 loss = self.model(input_ids = input_ids, 
-                                   attention_mask = attention_mask,
-                                   labels = labels)[0]
+                                  attention_mask = attention_mask,
+                                  labels = labels).loss
                 loss = loss / self.iters_to_accumulate
             
             #Backward Loss
@@ -110,8 +107,8 @@ class Trainer:
                 self.scaler.update()
                 self.optimizer.zero_grad()
    
-            gc.collect()
-            torch.cuda.empty_cache()
+            #gc.collect()
+            #torch.cuda.empty_cache()
 
             epoch_loss += loss.item()
         
@@ -134,10 +131,10 @@ class Trainer:
                 with torch.autocast(device_type=self.device_type, dtype=torch.float16):
                     loss = self.model(input_ids = input_ids, 
                                       attention_mask = attention_mask,
-                                      labels = labels)[0]
+                                      labels = labels).loss
                 
-                gc.collect()
-                torch.cuda.empty_cache()
+                #gc.collect()
+                #torch.cuda.empty_cache()
 
                 epoch_loss += loss.item()
         

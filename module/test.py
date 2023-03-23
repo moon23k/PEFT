@@ -1,6 +1,6 @@
 import torch, math, time, evaluate
-import torch.nn as nn
-import torch.nn.functional as F
+from tqdm import tqdm
+from module.search import Search
 from transformers import BertModel, BertTokenizerFast
 
 
@@ -13,10 +13,8 @@ class Tester:
         self.task = config.task
         self.tokenizer = tokenizer
         self.device = config.device
-        self.device_type = config.device_type
         self.dataloader = test_dataloader
-        self.batch_size = config.batch_size        
-        self.vocab_size = model.config.vocab_size
+        self.search = Search(config, self.model)
         
         if self.task == 'nmt':
             self.metric_name = 'BLEU'
@@ -24,62 +22,63 @@ class Tester:
 
         elif self.task == 'dialog':
             self.metric_name = 'Similarity'
-            self.metric_model = BertModel.from_pretrained('bert-base-uncased')
             self.metric_tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-        
+            self.metric_model = BertModel.from_pretrained('bert-base-uncased')
+            self.metric_model.eval()
+
         elif self.task == 'sum':
             self.metric_name = 'ROUGE'
-            self.metric_module = load('rouge')
-
-
-    
-    def metric_score(self, pred, label):
-        if self.task == 'nmt':
-            score = self.metric_module.compute(predictions=[pred.split()], 
-                                               references=[[label.split()]])['bleu']
-
-        elif self.task == 'dialog':
-            encoding = self.metric_tokenizer([pred, label], padding=True, return_tensors='pt')
-            bert_out = self.metric_model(**encoding)[0]
-
-            normalized = F.normalize(bert_out[:, 0, :], p=2, dim=-1)  # Only use of [CLS] token embedding
-            dist = normalized.matmul(normalized.T)
-            sim_matrix = dist.new_ones(dist.shape) - dist
-            score = sim_matrix[0, 1].item()
-
-        elif self.task == 'sum':
-            score = self.metric_module.compute(predictions=[pred.split()], 
-                                               references=[[label.split()]])['rouge2'].mid.fmeasure            
-            
-        return score * 100
-
+            self.metric_module = evaluate.load('rouge')
 
 
 
     def test(self):
-        self.model.eval()
-        
-        start_time = time.time()
+        tot_len = 0
+        greedy_score, beam_score = 0, 0
+
         with torch.no_grad():
-            for _, batch in tqdm(enumerate(self.dataloader)):   
+
+            print(f'Test Results on {self.task.upper()}')
+            for batch in tqdm(self.dataloader):
+            
+                src = batch['src'].to(self.device)
+                trg = batch['trg'].to(self.device)
+                tot_len += src.size(0)
+        
+                greedy_pred = self.search.greedy_search(src)
+                beam_pred = self.search.beam_search(src)
                 
-                input_ids = batch['input_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['labels'].to(self.device)
-                labels[labels ==-100] = 0
-                                
-                preds = self.model.generate(input_ids=input_ids, attention_mask=attention_mask,
-                                            max_new_tokens=300, use_cache=True)
-                
-                preds = self.tokenizer.batch_decode(preds, skip_special_tokens=True)
-                labels = self.tokenizer.batch_decode(labels, skip_special_tokens=True)
+                greedy_score += self.metric_score(greedy_pred, trg)
+                beam_score += self.metric_score(beam_pred, trg)
+        
+        greedy_score = round(greedy_score/tot_len, 2)
+        beam_score = round(beam_score/tot_len, 2)
+        
+        return greedy_score, beam_score
+        
 
-                metric_module.add_batch(predictions=preds, 
-                                        references=[[l] for l in labels])    
 
-        bleu_score = metric_module.compute()['bleu'] * 100
+    def metric_score(self, pred, label):
 
-        print('Test Results')
-        print(f"  >> {self.metric_name} Score: {bleu_score:.2f}")
-        print(f"  >> Spent Time: {self.measure_time(start_time, time.time())}")
+        pred = self.tokenizer.decode(pred)
+        label = self.tokenizer.decode(label.tolist())
 
+        #For Translation and Summarization Tasks
+        if self.task != 'dialog':
+            self.metric_module.add_batch(predictions=pred, references=[[l] for l in label])
+            if self.task == 'nmt':
+                score = self.metric_module.compute()['bleu']
+            elif self.task == 'sum':        
+                score = self.metric_module.compute()['rouge2']
+
+        #For Dialogue Generation Task
+        elif self.task == 'dialog':
+            encoding = self.metric_tokenizer(pred, label, padding=True, truncation=True, return_tensors='pt')
+            bert_out = self.metric_model(**encoding)[0]
+
+            normalized = torch.nn.functional.normalize(bert_out[:, 0, :], p=2, dim=-1)
+            dist = normalized.matmul(normalized.T)
+            sim_matrix = dist.new_ones(dist.shape) - dist
+            score = sim_matrix[0, 1].item()
+
+        return (score * 100)

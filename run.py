@@ -10,30 +10,35 @@ from module.test import Tester
 from module.train import Trainer
 from module.data import load_dataloader
 
-from transformers import T5Config
-from transformers import T5TokenizerFast
-from transformers import T5ForConditionalGeneration
+from transformers import (set_seed,
+                          T5Config, 
+                          LongT5Config, 
+                          T5TokenizerFast
+                          T5ForConditionalGeneration, 
+                          LongT5ForConditionalGeneration)
 
 
-def set_seed(SEED=42):
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
-    cudnn.benchmark = False
-    cudnn.deterministic = True
 
 
 def load_model(config):
     if config.mode == 'train':
-        model = T5ForConditionalGeneration.from_pretrained('t5-small')
-        print("Pretrained T5-Small Model has loaded")
+
+        if config.task == 'sum':
+            model = LongT5ForConditionalGeneration.from_pretrained(config.m_name)
+        else:
+            model = T5ForConditionalGeneration.from_pretrained(config.m_name)
+        
+        print("Pretrained T5 Model has loaded")
     
-    if config.mode != 'train':
+    elif config.mode != 'train':
         assert os.path.exists(config.ckpt)
-        model_config = T5Config.from_pretrained('t5-small')
-        model = T5ForConditionalGeneration(model_config)
+        
+        if config.task == 'sum':
+            model_config = LongT5Config.from_pretrained(config.m_name)
+            model = T5ForConditionalGeneration(model_config)
+        else:
+            model_config = T5Config.from_pretrained(config.m_name)
+            model = T5ForConditionalGeneration(model_config)
         print("Initialized T5-Small Model has loaded")
         model_state = torch.load(config.ckpt, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
@@ -68,9 +73,14 @@ class Config(object):
 
         self.clip = 1
         self.n_epochs = 10
-        self.batch_size = 16
+        self.batch_size = 128
         self.learning_rate = 5e-5
         self.iters_to_accumulate = 4
+
+        if self.task == 'sum':
+            self.m_name = "google/long-t5-tglobal-base"
+        else:
+            self.m_name = 't5-base'
 
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -115,7 +125,7 @@ def inference(config, model, tokenizer):
 
 
 def main(args):
-    set_seed()
+    set_seed(42)
     config = Config(args)
     model = load_model(config)
 

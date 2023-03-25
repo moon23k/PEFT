@@ -62,7 +62,7 @@ def load_dataloader(config, split):
 
     return DataLoader(Dataset(config.task, split), 
                       batch_size=config.batch_size, 
-                      shuffle=True,
+                      shuffle=True if config.mode=='train' else False,
                       collate_fn=base_collate,
-                      num_workers=2,
-                      pin_memory=True)
+                      pin_memory=True,
+                      num_workers=2)

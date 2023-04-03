@@ -4,6 +4,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 
+
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, task, split):
         super().__init__()
@@ -26,43 +27,46 @@ class Dataset(torch.utils.data.Dataset):
 
 
 
-def load_dataloader(config, split):
-    global pad_id
-    pad_id = config.pad_id    
 
-    def base_collate(batch):
-        input_ids_batch = []
-        attention_mask_batch = []
-        labels_batch = []
+class Collator(object):
+    def __init__(self, config):
+        self.task = config.task
+        self.pad_id = config.pad_id
 
-        for input_ids, attention_mask, labels in batch:
-            input_ids_batch.append(torch.LongTensor(input_ids))
-            attention_mask_batch.append(torch.LongTensor(attention_mask))
+    def __call__(self, batch):
+        
+        ids_batch, masks_batch, labels_batch = [], [], []
+
+        for ids, masks, labels in batch:
+            ids_batch.append(torch.LongTensor(ids))
+            masks_batch.append(torch.LongTensor(masks))
             labels_batch.append(torch.LongTensor(labels))
 
-        input_ids_batch = pad_sequence(input_ids_batch,
-                                       batch_first=True,
-                                       padding_value=pad_id)
+        ids_batch = pad_sequence(ids_batch,
+                                 batch_first=True,
+                                 padding_value=self.pad_id)
 
-        attention_mask_batch = pad_sequence(attention_mask_batch,
-                                            batch_first=True,
-                                            padding_value=pad_id)        
+        masks_batch = pad_sequence(masks_batch,
+                                   batch_first=True,
+                                   padding_value=self.pad_id)        
         
         labels_batch = pad_sequence(labels_batch,
                                     batch_first=True,
-                                    padding_value=pad_id)
+                                    padding_value=self.pad_id)
 
         labels_batch[labels_batch == 0] = -100
 
-        return {'input_ids': input_ids_batch, 
-                'attention_mask': attention_mask_batch,
+        return {'input_ids': ids_batch, 
+                'attention_mask': masks_batch,
                 'labels': labels_batch}
 
 
 
+
+def load_dataloader(config, split):
     return DataLoader(Dataset(config.task, split), 
                       batch_size=config.batch_size, 
                       shuffle=True if config.mode=='train' else False,
-                      collate_fn=base_collate,
+                      collate_fn=Collator(config),
                       pin_memory=True,
                       num_workers=2)

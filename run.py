@@ -1,21 +1,51 @@
 import numpy as np
-import os, random, argparse
-
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.backends.cudnn as cudnn
-
+import os, random, argparse, torch
 from module.test import Tester
 from module.train import Trainer
 from module.data import load_dataloader
-
 from transformers import (set_seed,
                           T5Config, 
                           LongT5Config, 
                           T5TokenizerFast
                           T5ForConditionalGeneration, 
                           LongT5ForConditionalGeneration)
+
+
+
+class Config(object):
+    def __init__(self, args):    
+        self.task = args.task
+        self.mode = args.mode
+        self.ckpt = f"ckpt/{self.task}.pt"
+
+        self.clip = 1
+        self.n_epochs = 10
+        self.batch_size = 128
+        self.learning_rate = 5e-5
+        self.iters_to_accumulate = 4
+        self.early_stop = 1
+        self.patience = 3
+
+        if self.task == 'sum':
+            self.m_name = "google/long-t5-tglobal-base"
+        else:
+            self.m_name = 't5-base'
+
+        use_cuda = torch.cuda.is_available()
+        if use_cuda:
+            self.device_type = 'cuda'
+        else:
+            self.device_type = 'cpu'
+
+        if self.task == 'inference':
+            self.device = torch.device('cpu')
+        else:
+            self.device = torch.device('cuda' if use_cuda else 'cpu')
+
+
+    def print_attr(self):
+        for attribute, value in self.__dict__.items():
+            print(f"* {attribute}: {value}")
 
 
 
@@ -64,39 +94,6 @@ def load_model(config):
     print(f"--- Model  Size : {check_size(model):.3f} MB\n")
     return model.to(config.device)
 
-
-class Config(object):
-    def __init__(self, args):    
-        self.task = args.task
-        self.mode = args.mode
-        self.ckpt = f"ckpt/{self.task}.pt"
-
-        self.clip = 1
-        self.n_epochs = 10
-        self.batch_size = 128
-        self.learning_rate = 5e-5
-        self.iters_to_accumulate = 4
-
-        if self.task == 'sum':
-            self.m_name = "google/long-t5-tglobal-base"
-        else:
-            self.m_name = 't5-base'
-
-        use_cuda = torch.cuda.is_available()
-        if use_cuda:
-            self.device_type = 'cuda'
-        else:
-            self.device_type = 'cpu'
-
-        if self.task == 'inference':
-            self.device = torch.device('cpu')
-        else:
-            self.device = torch.device('cuda' if use_cuda else 'cpu')
-
-
-    def print_attr(self):
-        for attribute, value in self.__dict__.items():
-            print(f"* {attribute}: {value}")
 
 
 

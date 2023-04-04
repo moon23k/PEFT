@@ -1,35 +1,33 @@
-import numpy as np
-import os, random, argparse, torch
-from module.test import Tester
-from module.train import Trainer
+import os, argparse, torch
 from module.data import load_dataloader
-from transformers import (set_seed,
-                          T5Config, 
-                          LongT5Config, 
-                          T5TokenizerFast
+from module.train import Trainer
+from module.test import Tester
+from transformers import (set_seed,T5Config, LongT5Config, 
+                          T5TokenizerFast, AutoTokenizer,
                           T5ForConditionalGeneration, 
                           LongT5ForConditionalGeneration)
 
 
 
 class Config(object):
-    def __init__(self, args):    
+    def __init__(self, args):
+        
         self.task = args.task
         self.mode = args.mode
         self.ckpt = f"ckpt/{self.task}.pt"
 
         self.clip = 1
         self.n_epochs = 10
-        self.batch_size = 128
+        self.batch_size = 32
         self.learning_rate = 5e-5
         self.iters_to_accumulate = 4
         self.early_stop = 1
         self.patience = 3
 
         if self.task == 'sum':
-            self.m_name = "google/long-t5-tglobal-base"
+            self.m_name = "hf-internal-testing/tiny-random-LongT5ForConditionalGeneration"
         else:
-            self.m_name = 't5-base'
+            self.m_name = 't5-small'
 
         use_cuda = torch.cuda.is_available()
         if use_cuda:
@@ -39,6 +37,7 @@ class Config(object):
 
         if self.task == 'inference':
             self.device = torch.device('cpu')
+            self.search_method = args.search
         else:
             self.device = torch.device('cuda' if use_cuda else 'cpu')
 
@@ -51,6 +50,26 @@ class Config(object):
 
 
 def load_model(config):
+
+    #Inner methods
+    def count_params(model):
+        params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        return params
+        
+    def check_size(model):
+        param_size, buffer_size = 0, 0
+
+        for param in model.parameters():
+            param_size += param.nelement() * param.element_size()
+        
+        for buffer in model.buffers():
+            buffer_size += buffer.nelement() * buffer.element_size()
+
+        size_all_mb = (param_size + buffer_size) / 1024**2
+        return size_all_mb
+
+
+    #Actual Process
     if config.mode == 'train':
 
         if config.task == 'sum':
@@ -69,26 +88,10 @@ def load_model(config):
         else:
             model_config = T5Config.from_pretrained(config.m_name)
             model = T5ForConditionalGeneration(model_config)
-        print("Initialized T5-Small Model has loaded")
+        print("Initialized T5 Model has loaded")
         model_state = torch.load(config.ckpt, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
         print(f"Trained Model states has loaded from {config.ckpt}")
-
-    def count_params(model):
-        params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        return params
-        
-    def check_size(model):
-        param_size, buffer_size = 0, 0
-
-        for param in model.parameters():
-            param_size += param.nelement() * param.element_size()
-        
-        for buffer in model.buffers():
-            buffer_size += buffer.nelement() * buffer.element_size()
-
-        size_all_mb = (param_size + buffer_size) / 1024**2
-        return size_all_mb
 
     print(f"--- Model Params: {count_params(model):,}")
     print(f"--- Model  Size : {check_size(model):.3f} MB\n")
@@ -113,10 +116,10 @@ def inference(config, model, tokenizer):
         input_ids = tokenizer(input_seq)
 
         #Search Output Sequence
-        if config.search_method == 'beam':
-            output_seq = model.beam_search(input_ids)
+        if config.search_method == 'greedy':
+            output_seq = model.generate(input_ids)
         else:
-            output_seq = model.greedy_search(input_ids)
+            output_seq = model.generate(input_ids, num_beams=config.num_beams)
         print(f"Model Out Sequence >> {output_seq}")       
 
 

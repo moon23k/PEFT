@@ -1,7 +1,6 @@
-import os, re, json 
-import yaml, nltk, argparse
+import os, re, json, argparse
 from datasets import load_dataset
-from transformers import T5TokenizerFast
+from transformers import T5TokenizerFast, AutoTokenizer
 
 
 
@@ -20,14 +19,9 @@ def load_data(task):
 
 
 #NMT
-def process_nmt(orig_data, tokenizer, volumn=36000):
-    min_len = 10 
-    max_len = 300
-    max_diff = 50
-    prefix = 'translate English to German: '
-
-    volumn_cnt = 0
-    processed = []
+def process_nmt(orig_data, tokenizer, volumn=32000):
+    processed, volumn_cnt = [], 0
+    min_len, max_len, max_diff = 10, 300, 50 
     
     for elem in orig_data:
         src, trg = elem['en'].lower(), elem['de'].lower()
@@ -41,8 +35,8 @@ def process_nmt(orig_data, tokenizer, volumn=36000):
         if max_condition & min_condition & dif_condition:
             temp_dict = dict()
             
-            src_tokenized = tokenizer(prefix + src, max_length=512, truncation=True)
-            trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
+            src_tokenized = tokenizer(src)
+            trg_tokenized = tokenizer(trg)
 
             temp_dict['input_ids'] = src_tokenized['input_ids']
             temp_dict['attention_mask'] = src_tokenized['attention_mask']
@@ -60,11 +54,10 @@ def process_nmt(orig_data, tokenizer, volumn=36000):
 
 
 #Dialog
-def process_dialog(orig_data, tokenizer, volumn=36000):
-    volumn_cnt = 0
+def process_dialog(orig_data, tokenizer, volumn=32000):
+    processed, volumn_cnt = [], 0
     src_list, trg_list = [], []
-    processed = []
-
+    
     for dial in orig_data:
         dial_list = []
         dial_turns = len(dial)
@@ -102,8 +95,8 @@ def process_dialog(orig_data, tokenizer, volumn=36000):
     
     for src, trg in zip(src_list, trg_list):
         temp_dict = dict()
-        src_tokenized = tokenizer(src, max_length=512, truncation=True)
-        trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
+        src_tokenized = tokenizer(src)
+        trg_tokenized = tokenizer(trg)
 
         temp_dict['input_ids'] = src_tokenized['input_ids']
         temp_dict['attention_mask'] = src_tokenized['attention_mask']
@@ -121,17 +114,11 @@ def process_dialog(orig_data, tokenizer, volumn=36000):
 
 
 #Sum
-def process_sum(orig_data, tokenizer, volumn=36000):    
-    max_num=30  
-    min_len=500 
-    max_len=2000
-    prefix = 'summarize: '
-
-    volumn_cnt = 0
-    processed = []
+def process_sum(orig_data, tokenizer, volumn=32000):    
+    min_len, max_len=500, 2000
+    processed, volumn_cnt = [], 0
 
     for elem in orig_data:
-        prefix = 'summarize: '
         src, trg = elem['article'].lower(), elem['highlights'].lower()
 
         #Filter too Short or too Long Context
@@ -139,25 +126,14 @@ def process_sum(orig_data, tokenizer, volumn=36000):
             continue
         if len(trg) > min_len:
             continue
-        
-        #Filter too long Sentences 
-        src_split = nltk.tokenize.sent_tokenize(src)
-        if len(src_split) > max_num:
-            continue
-        for seq in src_split:
-            if len(seq) > min_len:
-                continue
-
-        #Add Prefix and make it into long string obj 
-        src = prefix + ' '.join(src_split)
 
         #remove unnecessary characters in trg sequence
         trg = re.sub(r'\n', ' ', trg.strip())         #remove \n
         trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
         
         temp_dict = dict()
-        src_tokenized = tokenizer(prefix + src, max_length=512, truncation=True)
-        trg_tokenized = tokenizer(trg, max_length=512, truncation=True)
+        src_tokenized = tokenizer(src)
+        trg_tokenized = tokenizer(trg)
 
         temp_dict['input_ids'] = src_tokenized['input_ids']
         temp_dict['attention_mask'] = src_tokenized['attention_mask']
@@ -176,7 +152,7 @@ def process_sum(orig_data, tokenizer, volumn=36000):
 
 def save_data(task, data_obj):
     #split data into train/valid/test sets
-    train, valid, test = data_obj[:-6000], data_obj[-6000:-3000], data_obj[-3000:]
+    train, valid, test = data_obj[:-2000], data_obj[-2000:-1000], data_obj[-1000:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
     for key, val in data_dict.items():
@@ -189,12 +165,14 @@ def save_data(task, data_obj):
 def main(task):
     #Prerequisite
     os.makedirs(f'data/{task}', exist_ok=True)
-    if task == 'sum':
-        nltk.download('punkt')
 
     #Load Original Data
     orig = load_data(task)
-    tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=512)
+
+    if task == 'sum':
+        tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-LongT5ForConditionalGeneration")
+    else:
+        tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=512)
 
     #PreProcess Data
     if task == 'nmt':

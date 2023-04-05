@@ -168,11 +168,8 @@ def main(task):
 
     #Load Original Data
     orig = load_data(task)
-
-    if task == 'sum':
-        tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-LongT5ForConditionalGeneration")
-    else:
-        tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=512)
+    max_len = 512 if task != 'sum' else 1000
+    tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=max_len)
 
     #PreProcess Data
     if task == 'nmt':

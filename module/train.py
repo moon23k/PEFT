@@ -8,6 +8,7 @@ import torch.optim as optim
 class Trainer:
     def __init__(self, config, model, train_dataloader, valid_dataloader):
         super(Trainer, self).__init__()
+
         self.model = model
         self.clip = config.clip
         self.device = config.device
@@ -41,6 +42,7 @@ class Trainer:
               Valid PPL: {record_dict['valid_ppl']:.2f}\n""".replace(' ' * 14, ''))
 
 
+
     @staticmethod
     def measure_time(start_time, end_time):
         elapsed_time = end_time - start_time
@@ -49,8 +51,11 @@ class Trainer:
         return f"{elapsed_min}m {elapsed_sec}s"
 
 
+
     def train(self):
+        
         best_loss, records = float('inf'), []
+
         for epoch in range(1, self.n_epochs + 1):
             start_time = time.time()
 
@@ -78,10 +83,12 @@ class Trainer:
             json.dump(records, fp)
 
 
+
+
     def train_epoch(self):
+
         self.model.train()
         epoch_loss = 0
-        tot_len = len(self.train_dataloader)
 
         for idx, batch in enumerate(self.train_dataloader):
             input_ids = batch['input_ids'].to(self.device)
@@ -112,15 +119,17 @@ class Trainer:
 
             epoch_loss += loss.item()
         
-        epoch_loss = round(epoch_loss / tot_len, 3)
+        epoch_loss = round(epoch_loss / len(self.train_dataloader), 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)    
+
         return epoch_loss, epoch_ppl
     
 
+
     def valid_epoch(self):
+        
         self.model.eval()
         epoch_loss = 0
-        tot_len = len(self.valid_dataloader)
         
         with torch.no_grad():
             for _, batch in enumerate(self.valid_dataloader):
@@ -138,6 +147,7 @@ class Trainer:
 
                 epoch_loss += loss.item()
         
-        epoch_loss = round(epoch_loss / tot_len, 3)
+        epoch_loss = round(epoch_loss / len(self.valid_dataloader), 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)        
+
         return epoch_loss, epoch_ppl

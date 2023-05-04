@@ -14,6 +14,7 @@ class Config(object):
 
         self.task = args.task
         self.mode = args.mode
+        self.m_name = 't5-base'
         self.ckpt = f"ckpt/{self.task}.pt"
 
         self.clip = 1
@@ -21,10 +22,9 @@ class Config(object):
         self.batch_size = 32
         self.learning_rate = 5e-5
         self.iters_to_accumulate = 4
+
         self.early_stop = 1
         self.patience = 3
-
-        self.m_name = 't5-base'
 
         use_cuda = torch.cuda.is_available()
         if use_cuda:

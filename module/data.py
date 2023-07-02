@@ -13,10 +13,8 @@ class Dataset(torch.utils.data.Dataset):
 
     @staticmethod
     def load_data(task, split):
-        
         with open(f"data/{task}/{split}.json", 'r') as f:
             data = json.load(f)
-        
         return data
 
 
@@ -25,11 +23,9 @@ class Dataset(torch.utils.data.Dataset):
 
     
     def __getitem__(self, idx):
-        
         input_ids = self.data[idx]['input_ids']
         attention_mask = self.data[idx]['attention_mask']
         labels = self.data[idx]['labels']
-
         return input_ids, attention_mask, labels
 
 
@@ -43,7 +39,6 @@ class Collator(object):
 
 
     def __call__(self, batch):
-        
         ids_batch, masks_batch, labels_batch = [], [], []
 
         for ids, masks, labels in batch:

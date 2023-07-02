@@ -122,7 +122,7 @@ def main(args):
     model = load_model(config)
 
     setattr(config, 'pad_id', model.config.pad_token_id)
-    setattr(config, 'num_beams', model.config.num_beams)
+    setattr(config, 'beam_size', model.config.num_beams)
 
 
     if config.mode == 'train':

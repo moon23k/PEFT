@@ -14,6 +14,7 @@ class Tester:
         self.device = config.device
         self.dataloader = test_dataloader
         self.beam_size = config.beam_size
+        self.max_len = 512
 
         if self.task == 'nmt':
             self.metric_name = 'BLEU'
@@ -50,8 +51,9 @@ class Tester:
                 trg = batch['trg'].to(self.device)
                 tot_len += src.size(0)
         
-                greedy_pred = self.model.generate(src, beam_size=self.beam_size)
-                beam_pred = self.model.generate(src)
+                greedy_pred = self.model.generate(src, max_new_tokens=self.max_len, do_sample=False)
+                beam_pred = self.model.generate(src, num_beams=self.beam_size, 
+                                                max_new_tokens=self.max_len, do_sample=False)
                 
                 greedy_score += self.metric_score(greedy_pred, trg)
                 beam_score += self.metric_score(beam_pred, trg)
@@ -64,17 +66,16 @@ class Tester:
 
 
     def metric_score(self, pred, label):
+        pred = self.tokenizer.batch_decode(pred, skip_special_tokens=True)[0]
+        label = self.tokenizer.batch_decode(label, skip_special_tokens=True)[0]
 
-        pred = self.tokenizer.decode(pred)
-        label = self.tokenizer.decode(label.tolist())
+        #For Translation Task
+        if self.task == 'nmt':
+            score = self.metric_module.compute(predictions=[pred], references=[[label]])['bleu']
 
-        #For Translation and Summarization Tasks
-        if self.task != 'dialog':
-            self.metric_module.add_batch(predictions=pred, references=[[l] for l in label])
-            if self.task == 'nmt':
-                score = self.metric_module.compute()['bleu']
-            elif self.task == 'sum':        
-                score = self.metric_module.compute()['rouge2']
+        #For Summarization Task
+        elif self.task == 'sum':        
+            score = self.metric_module.compute(predictions=[pred], references=[[label]])['rouge2']
 
         #For Dialogue Generation Task
         elif self.task == 'dialog':

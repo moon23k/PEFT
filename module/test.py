@@ -57,7 +57,8 @@ class Tester:
                 
                 beam_pred = self.model.generate(
                     input_ids, num_beams=self.beam_size, 
-                    max_new_tokens=self.max_len, do_sample=False)
+                    max_new_tokens=self.max_len, do_sample=False
+                )
                 
                 greedy_score += self.metric_score(greedy_pred, labels)
                 beam_score += self.metric_score(beam_pred, labels)

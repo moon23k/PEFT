@@ -1,27 +1,39 @@
 import os, re, json, argparse
 from datasets import load_dataset
-from transformers import T5TokenizerFast, AutoTokenizer
 
 
 
 def load_data(task):
     if task == 'nmt':
         data = load_dataset('wmt14', 'de-en', split='train')['translation']
-        
+
     elif task == 'dialog':
-        data = load_dataset('daily_dialog', split='train')['dialog']
+        loaded_data = load_dataset('daily_dialog')
+        data = loaded_data['train']['dialog'] + \
+               loaded_data['validation']['dialog'] + \
+               loaded_data['test']['dialog']
 
     elif task == 'sum':
-        data = load_dataset('cnn_dailymail', '3.0.0', split='train')
+        loaded_data = load_dataset('cnn_dailymail', '3.0.0')
 
+        data = []
+        for split in ['train', 'validation', 'test']:
+            for elem in loaded_data[split]:
+                data.append({'article': elem['article'], 
+                             'highlights': elem['highlights']})
+                
     return data
 
 
 
 #NMT
-def process_nmt(orig_data, tokenizer, volumn=32000):
-    processed, volumn_cnt = [], 0
-    min_len, max_len, max_diff = 10, 300, 50 
+def process_nmt(orig_data, volumn=101100):
+    min_len = 10 
+    max_len = 300
+    max_diff = 50
+
+    processed = []
+    volumn_cnt = 0
     
     for elem in orig_data:
         src, trg = elem['en'].lower(), elem['de'].lower()
@@ -33,16 +45,7 @@ def process_nmt(orig_data, tokenizer, volumn=32000):
         dif_condition = abs(src_len - trg_len) < max_diff
 
         if max_condition & min_condition & dif_condition:
-            temp_dict = dict()
-            
-            src_tokenized = tokenizer(src)
-            trg_tokenized = tokenizer(trg)
-
-            temp_dict['input_ids'] = src_tokenized['input_ids']
-            temp_dict['attention_mask'] = src_tokenized['attention_mask']
-            temp_dict['labels'] = trg_tokenized['input_ids']
-            
-            processed.append(temp_dict)
+            processed.append({'src': src, 'trg':trg})
             
             #End condition
             volumn_cnt += 1
@@ -54,18 +57,23 @@ def process_nmt(orig_data, tokenizer, volumn=32000):
 
 
 #Dialog
-def process_dialog(orig_data, tokenizer, volumn=32000):
-    processed, volumn_cnt = [], 0
+def process_dialog(orig_data):
+    processed = []
     src_list, trg_list = [], []
-    
+
     for dial in orig_data:
         dial_list = []
         dial_turns = len(dial)
+
+        if max([len(d) for d in dial]) > 300:
+            continue
         
         for uttr in dial:
             _uttr = re.sub(r"\s([?,.!’](?:\s|$))", r'\1', uttr)
-            _uttr = re.sub(r'([’])\s+', r'\1', _uttr)
-            dial_list.append(_uttr.strip().lower())
+            _uttr = re.sub(r'([’])\s+', r'\1', _uttr).strip().lower()
+            if len(_uttr) > 300:
+                break
+            dial_list.append(_uttr)
         
         if dial_turns < 2:
             continue
@@ -92,67 +100,46 @@ def process_dialog(orig_data, tokenizer, volumn=32000):
             trg_list.extend(dial_list[2::2])   
 
     assert len(src_list) == len(trg_list)
+    for src, trg in zip(src_list, trg_list):        
+        processed.append({'src': src, 'trg':trg})
     
-    for src, trg in zip(src_list, trg_list):
-        temp_dict = dict()
-        src_tokenized = tokenizer(src)
-        trg_tokenized = tokenizer(trg)
-
-        temp_dict['input_ids'] = src_tokenized['input_ids']
-        temp_dict['attention_mask'] = src_tokenized['attention_mask']
-        temp_dict['labels'] = trg_tokenized['input_ids']
-        
-        processed.append(temp_dict)
-
-        #End Condition
-        volumn_cnt += 1
-        if volumn_cnt == volumn:
-            break
-    
-    return processed
+    return processed    
 
 
 
 #Sum
-def process_sum(orig_data, tokenizer, volumn=32000):    
-    min_len, max_len=500, 2000
-    processed, volumn_cnt = [], 0
+def process_sum(orig_data, volumn=101100):
+    processed = []
+    volumn_cnt = 0
+    min_len, max_len = 500, 3000
 
     for elem in orig_data:
-        src, trg = elem['article'].lower(), elem['highlights'].lower()
+        src, trg = elem['article'], elem['highlights']
 
-        #Filter too Short or too Long Context
-        if not (min_len < len(src) < max_len):
-            continue
-        if len(trg) > min_len:
-            continue
+        if min_len < len(src) < max_len:
+            if len(trg) < min_len:
+                
+                #Lowercase
+                src, trg = src.lower(), trg.lower()
 
-        #remove unnecessary characters in trg sequence
-        trg = re.sub(r'\n', ' ', trg.strip())         #remove \n
-        trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
-        
-        temp_dict = dict()
-        src_tokenized = tokenizer(src)
-        trg_tokenized = tokenizer(trg)
+                #Remove unnecessary characters in trg sequence
+                trg = re.sub(r'\n', ' ', trg)                 #remove \n
+                trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
 
-        temp_dict['input_ids'] = src_tokenized['input_ids']
-        temp_dict['attention_mask'] = src_tokenized['attention_mask']
-        temp_dict['labels'] = trg_tokenized['input_ids']
+                processed.append({'src': src, 'trg': trg})
 
-        processed.append(temp_dict)
-
-        volumn_cnt += 1
-        if volumn_cnt == volumn:
-            break
+                #End Condition
+                volumn_cnt += 1
+                if volumn_cnt == volumn:
+                    break
     
-    return processed
-
+    return processed           
 
 
 
 def save_data(task, data_obj):
     #split data into train/valid/test sets
-    train, valid, test = data_obj[:-2000], data_obj[-2000:-1000], data_obj[-1000:]
+    train, valid, test = data_obj[:-1100], data_obj[-1100:-100], data_obj[-100:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
     for key, val in data_dict.items():
@@ -162,22 +149,21 @@ def save_data(task, data_obj):
     
 
 
+
 def main(task):
     #Prerequisite
     os.makedirs(f'data/{task}', exist_ok=True)
 
     #Load Original Data
     orig = load_data(task)
-    max_len = 512 if task != 'sum' else 1000
-    tokenizer = T5TokenizerFast.from_pretrained('t5-small', model_max_length=max_len)
 
     #PreProcess Data
     if task == 'nmt':
-        processed = process_nmt(orig, tokenizer)
+        processed = process_nmt(orig)
     elif task == 'dialog':
-        processed = process_dialog(orig, tokenizer)
+        processed = process_dialog(orig)
     elif task == 'sum':
-        processed = process_sum(orig, tokenizer)        
+        processed = process_sum(orig)        
 
     #Save Data
     save_data(task, processed)

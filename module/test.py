@@ -1,11 +1,10 @@
-from tqdm import tqdm
-import torch, math, time, evaluate
+import math, time, torch, evaluate
 from transformers import BertModel, BertTokenizerFast
 
 
 
 class Tester:
-    def __init__(self, config, model, test_dataloader, tokenizer):
+    def __init__(self, config, model, tokenizer, test_dataloader):
         super(Tester, self).__init__()
         
         self.model = model
@@ -41,25 +40,30 @@ class Tester:
 
     def test(self):
         self.model.eval()        
-        tot_len, greedy_score, beam_score = 0, 0, 0
+        tot_len = len(self.dataloader)
+        greedy_score, beam_score = 0, 0
 
         print(f'Test Results on {self.task.upper()}')
         with torch.no_grad():
-            for batch in tqdm(self.dataloader):
+            for batch in self.dataloader:
             
-                src = batch['src'].to(self.device)
-                trg = batch['trg'].to(self.device)
-                tot_len += src.size(0)
+                input_ids = batch['input_ids'].to(self.device)
+                labels = batch['labels'].tolist()
         
-                greedy_pred = self.model.generate(src, max_new_tokens=self.max_len, do_sample=False)
-                beam_pred = self.model.generate(src, num_beams=self.beam_size, 
-                                                max_new_tokens=self.max_len, do_sample=False)
+                greedy_pred = self.model.generate(
+                    input_ids, do_sample=False,
+                    max_new_tokens=self.max_len, 
+                )
                 
-                greedy_score += self.metric_score(greedy_pred, trg)
-                beam_score += self.metric_score(beam_pred, trg)
+                beam_pred = self.model.generate(
+                    input_ids, num_beams=self.beam_size, 
+                    max_new_tokens=self.max_len, do_sample=False)
+                
+                greedy_score += self.metric_score(greedy_pred, labels)
+                beam_score += self.metric_score(beam_pred, labels)
         
-        greedy_score = round(greedy_score/tot_len, 2)
-        beam_score = round(beam_score/tot_len, 2)
+        greedy_score = round(greedy_score / tot_len, 2)
+        beam_score = round(beam_score / tot_len, 2)
         
         return greedy_score, beam_score
         

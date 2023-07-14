@@ -1,15 +1,13 @@
 import json, torch
 from torch.utils.data import DataLoader
-from torch.nn.utils.rnn import pad_sequence
-
 
 
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, task, split):
         super().__init__()
+        self.task = task
         self.data = self.load_data(task, split)
-
 
     @staticmethod
     def load_data(task, split):
@@ -17,55 +15,59 @@ class Dataset(torch.utils.data.Dataset):
             data = json.load(f)
         return data
 
-
     def __len__(self):
         return len(self.data)
-
     
     def __getitem__(self, idx):
-        input_ids = self.data[idx]['input_ids']
-        attention_mask = self.data[idx]['attention_mask']
-        labels = self.data[idx]['labels']
-        return input_ids, attention_mask, labels
+        src = self.data[idx]['src']
+        trg = self.data[idx]['trg']
 
+        if self.task == 'sum':
+            return src, 'summarize: ' + trg
+        return src, trg
 
 
 
 class Collator(object):
-
-    def __init__(self, config):
+    def __init__(self, config, tokenizer):
         self.task = config.task
+        self.tokenizer = tokenizer
         self.pad_id = config.pad_id
 
-
     def __call__(self, batch):
-        ids_batch, masks_batch, labels_batch = [], [], []
+        src_batch, trg_batch = [], []
 
-        for ids, masks, labels in batch:
-            ids_batch.append(torch.LongTensor(ids))
-            masks_batch.append(torch.LongTensor(masks))
-            labels_batch.append(torch.LongTensor(labels))
+        for src, trg in batch:
+            src_batch.append(src)
+            trg_batch.append(trg)
 
-        ids_batch = self.pad_batch(ids_batch)
-        masks_batch = self.pad_batch(masks_batch)        
-        labels_batch = self.pad_batch(labels_batch)
+        src_tokenized = self.tokenizer(
+            src_batch, 
+            padding=True, 
+            truncation=True, 
+            return_tensors='pt'
+        )
 
-        labels_batch[labels_batch == 0] = -100
+        labels = self.tokenizer(
+            trg_batch, 
+            padding=True, 
+            truncation=True, 
+            return_tensors='pt'
+        ).input_ids
+        
+        if self.task == 'sum':
+            labels[labels==self.pad_id] = -100
 
-        return {'input_ids': ids_batch, 
-                'attention_mask': masks_batch,
-                'labels': labels_batch}
-
-
-    def pad_batch(self, batch):
-        return pad_sequence(batch, batch_first=True, padding_value=self.pad_id)
+        return {'input_ids': src_tokenized.input_ids, 
+                'attention_mask': src_tokenized.attention_mask,
+                'labels': labels}
 
 
 
-def load_dataloader(config, split):
+def load_dataloader(config, tokenizer, split):
     return DataLoader(Dataset(config.task, split), 
-                      batch_size=config.batch_size, 
+                      batch_size=config.batch_size if config.mode=='train' else 1, 
                       shuffle=True if config.mode=='train' else False,
-                      collate_fn=Collator(config),
+                      collate_fn=Collator(config, tokenizer),
                       pin_memory=True,
                       num_workers=2)

@@ -1,11 +1,13 @@
 import os, torch
-from transformers import (MarianConfig, 
-                          MarianMTModel,
-                          T5Config, 
-                          T5ForConditionalGeneration, 
-                          BlenderbotSmallConfig, 
-                          BlenderbotSmallForConditionalGeneration)
+from transformers import (
+    MarianConfig, MarianMTModel,
+    T5Config, T5ForConditionalGeneration, 
+    BlenderbotSmallConfig, BlenderbotSmallForConditionalGeneration
+)
 
+
+def init_weights(model):
+    return
 
 
 

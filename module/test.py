@@ -1,5 +1,5 @@
 import math, time, torch, evaluate
-from transformers import BertModel, BertTokenizerFast
+from transformers import BertModel, AutoTokenizer
 
 
 
@@ -20,9 +20,10 @@ class Tester:
             self.metric_module = evaluate.load('bleu')
 
         elif self.task == 'dialog':
+            mname = 'bert-base-uncased'
             self.metric_name = 'Similarity'
-            self.metric_tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
-            self.metric_model = BertModel.from_pretrained('bert-base-uncased')
+            self.metric_tokenizer = AutoTokenizer.from_pretrained(mname)
+            self.metric_model = BertModel.from_pretrained(mname)
             self.metric_model.eval()
 
         elif self.task == 'sum':
@@ -76,15 +77,27 @@ class Tester:
 
         #For Translation Task
         if self.task == 'nmt':
-            score = self.metric_module.compute(predictions=[pred], references=[[label]])['bleu']
+            score = self.metric_module.compute(
+                predictions=[pred], 
+                references=[[label]]
+            )['bleu']
 
         #For Summarization Task
         elif self.task == 'sum':        
-            score = self.metric_module.compute(predictions=[pred], references=[[label]])['rouge2']
+            score = self.metric_module.compute(
+                predictions=[pred], 
+                references=[[label]]
+            )['rouge2']
 
         #For Dialogue Generation Task
         elif self.task == 'dialog':
-            encoding = self.metric_tokenizer(pred, label, padding=True, truncation=True, return_tensors='pt')
+            encoding = self.metric_tokenizer(
+                pred, label, 
+                padding=True, 
+                truncation=True, 
+                return_tensors='pt'
+            )
+
             bert_out = self.metric_model(**encoding)[0]
 
             normalized = torch.nn.functional.normalize(bert_out[:, 0, :], p=2, dim=-1)

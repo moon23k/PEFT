@@ -1,9 +1,12 @@
 import os, argparse, torch
-from module.test import Tester
-from module.train import Trainer
-from module.model import load_model
-from module.data import load_dataloader
 from transformers import set_seed, AutoTokenizer
+from module import (
+    load_dataloader,
+    load_model,
+    Trainer, 
+    Tester
+) 
+
 
 
 

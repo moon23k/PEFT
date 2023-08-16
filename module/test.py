@@ -1,5 +1,4 @@
 import math, time, torch, evaluate
-from transformers import BertModel, AutoTokenizer
 
 
 
@@ -18,15 +17,7 @@ class Tester:
         if self.task == 'nmt':
             self.metric_name = 'BLEU'
             self.metric_module = evaluate.load('bleu')
-
-        elif self.task == 'dialog':
-            mname = 'bert-base-uncased'
-            self.metric_name = 'Similarity'
-            self.metric_tokenizer = AutoTokenizer.from_pretrained(mname)
-            self.metric_model = BertModel.from_pretrained(mname)
-            self.metric_model.eval()
-
-        elif self.task == 'sum':
+        else:
             self.metric_name = 'ROUGE'
             self.metric_module = evaluate.load('rouge')
 

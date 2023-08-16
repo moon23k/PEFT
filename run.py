@@ -1,4 +1,4 @@
-import os, argparse, torch
+import os, yaml, argparse, torch
 from transformers import set_seed, AutoTokenizer
 from module import (
     load_dataloader,
@@ -13,43 +13,37 @@ from module import (
 class Config(object):
     def __init__(self, args):
 
+        with open('config.yaml', 'r') as f:
+            params = yaml.load(f, Loader=yaml.FullLoader)
+            for group in params.keys():
+                for key, val in params[group].items():
+                    setattr(self, key, val)
+
+
         self.task = args.task
         self.mode = args.mode
+        self.ckpt = f"ckpt/{self.task}.pt"
+
         
         if self.task == 'nmt':
             self.mname = "Helsinki-NLP/opus-mt-en-de"
+        
         elif self.task == 'dialog':
             self.mname = "facebook/blenderbot_small-90M"
+        
         elif self.task == 'sum':
             self.mname = "t5-small"
-
-        self.ckpt = f"ckpt/{self.task}.pt"
-
-        self.clip = 1
-        self.n_epochs = 10
-        self.learning_rate = 5e-5
-        self.iters_to_accumulate = 4
-
-        self.early_stop = 1
-        self.patience = 3
-
-        self.batch_size = 32
-        self.model_max_length = 512
-
-        if self.task == 'sum':
-            self.model_max_length = 1024
-            self.batch_size = 16
+            self.max_len *= 2
+            self.batch_size //= 2
 
 
         use_cuda = torch.cuda.is_available()
-        self.device_type = 'cuda' if use_cuda else 'cpu'
 
-        if self.task == 'inference':
-            self.search_method = args.search
-            self.device = torch.device('cpu')
-        else:
-            self.search = None
-            self.device = torch.device(self.device_type)
+        self.device_type = 'cuda' \
+                           if use_cuda and self.mode != 'inference' \
+                           else 'cpu'
+
+        self.device = torch.device(self.device_type)
 
 
     def print_attr(self):
@@ -92,9 +86,6 @@ def main(args):
         config.mname, 
         model_max_length=config.model_max_length
     )
-
-    setattr(config, 'pad_id', tokenizer.pad_token_id)
-    setattr(config, 'beam_size', model.config.num_beams)
 
 
     if config.mode == 'train':

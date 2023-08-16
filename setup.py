@@ -5,7 +5,9 @@ from datasets import load_dataset
 
 def load_data(task):
     if task == 'nmt':
-        data = load_dataset('wmt14', 'de-en', split='train')['translation']
+        data = load_dataset(
+            'wmt14', 'de-en', split='train'
+        )['translation']
 
     elif task == 'dialog':
         loaded_data = load_dataset('daily_dialog')

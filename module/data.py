@@ -61,11 +61,11 @@ class Collator(object):
 
 
 def load_dataloader(config, tokenizer, split):
-    is_train = True if split == 'train' else False
+    is_train = split == 'train'
 
     return DataLoader(
         Dataset(config.task, split), 
-        batch_size=config.batch_size if is_train else 1, 
+        batch_size=config.batch_size, 
         shuffle=True if is_train else False,
         collate_fn=Collator(config, tokenizer),
         pin_memory=True,

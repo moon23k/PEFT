@@ -1,10 +1,8 @@
 import time, math, json, torch
 import torch.nn as nn
 import torch.amp as amp
-
-import torch.optim as optim
-from optim import AdamW
-from optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 
 
@@ -117,9 +115,11 @@ class Trainer:
             labels = batch['labels'].to(self.device)
 
             with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+
                 loss = self.model(input_ids = input_ids, 
                                   attention_mask = attention_mask,
                                   labels = labels).loss
+                
                 loss = loss / self.iters_to_accumulate
             
             #Backward Loss

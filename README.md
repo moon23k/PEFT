@@ -1,4 +1,4 @@
-## PT Anchors
+## PLM Anchors
 &nbsp; Pre-trained models have gained widespread adoption in various domains of artificial intelligence, showcasing impressive performance. In the realm of natural language processing, leveraging these models proves highly advantageous, particularly for challenging tasks like natural language generation. However, it is essential to note that the mere adoption of pre-trained models does not guarantee consistent excellence. The downstream performance can vary significantly based on the intricacies of the pre-training methodology employed. Moreover, selecting an appropriate model size that aligns with the available computing resources holds paramount importance.
 To address these considerations, this repository compares the performance of three models across three distinct natural language generation tasks while taking into account model size, pre-training data, and the specific pre-training approaches. The evaluated models encompass **Marian**, **BlenderBot**, and **T5**, dedicated to **Neural Machine Translation**, **Dialogue Generation**, and **Summarization** tasks, respectively. All models are accessed and utilized through the HuggingFace library.
 Through this comprehensive analysis and comparison, ultimate aim is to provide valuable guidelines for effectively harnessing pre-trained models in natural language generation. By understanding the impact of model size, pre-training data, and methodology, practitioners can make informed decisions when selecting and deploying these models, ensuring optimal performance and resource utilization.
@@ -20,8 +20,8 @@ Through this comprehensive analysis and comparison, ultimate aim is to provide v
 
 ## Model Configs
 
-|                               | &emsp; **MarianMT**        | &emsp; **BlenderBot**                   | &emsp; **T5** |
-| ---:                          | :---                       | :---                                    | :---   |
+|                               |  **MarianMT**              | **BlenderBot**                          | **T5** |
+| ---:                          | ---:                       | ---:                                    | ---:   |
 | **Architecture** &nbsp;       | MarianMTModel              | BlenderbotSmallForConditionalGeneration | T5ForConditionalGeneration |
 | **Model Name** &nbsp;         | Helsinki-NLP/opus-mt-en-de | facebook/blenderbot_small-90M           | t5-small |BERT
 | **Vocab Size** &nbsp;         | 58,101                     | 54,944                                  | 32,128 |
@@ -34,14 +34,14 @@ Through this comprehensive analysis and comparison, ultimate aim is to provide v
 
 ## Results
 
-| &emsp; **Model** &emsp; | &emsp; **Metric** &emsp; | &emsp; **Greedy Score** &emsp; | &emsp; **Beam Score** &emsp; |
-| :---:                   | :---:                    | :---:                          | :---:                        |
-| Pretrained MarianMT |BLEU|||
-| Fine Tuned MarianMT |BLEU|||
-| &emsp; Pretrained BlenderBotSmall &emsp;|BERT|||
-| Fine Tuned BlenderBotSmall |BERT|||
-| Pretrained T5 |ROUGE|17.72|17.83|
-| Fine Tuned T5 |ROUGE|||
+| &emsp; **Model** &emsp; | &emsp; **Metric** &emsp; | &emsp; **Evaluation Score** &emsp; |
+| ---:                    | :---:                    | :---:                          |
+| Pretrained **MarianMT** | BLEU | - |
+| Fine Tuned **MarianMT** | BLEU | - |
+| Pretrained **BlenderBotSmall**| ROUGE | - |
+| Fine Tuned **BlenderBotSmall** | ROUGE | - |
+| Pretrained **T5** | ROUGE |17.72|
+| Fine Tuned **T5** | ROUGE | - |
 
 </br></br>
 

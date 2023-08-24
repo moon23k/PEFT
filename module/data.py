@@ -32,7 +32,7 @@ class Collator(object):
     def __init__(self, config, tokenizer):
         self.task = config.task
         self.tokenizer = tokenizer
-        self.pad_id = config.pad_id
+        self.pad_id = tokenizer.pad_token_id
 
     def __call__(self, batch):
         src_batch, trg_batch = zip(*batch)
@@ -62,10 +62,12 @@ class Collator(object):
 
 def load_dataloader(config, tokenizer, split):
     is_train = split == 'train'
+    batch_size = config.batch_size if is_train \
+                 else config.batch_size // 4
 
     return DataLoader(
         Dataset(config.task, split), 
-        batch_size=config.batch_size, 
+        batch_size=batch_size, 
         shuffle=True if is_train else False,
         collate_fn=Collator(config, tokenizer),
         pin_memory=True,

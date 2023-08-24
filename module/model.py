@@ -9,10 +9,6 @@ from transformers import (
 )
 
 
-def init_weights(model):
-    return
-
-
 
 def print_model_desc(model):
     #Number of trainerable parameters

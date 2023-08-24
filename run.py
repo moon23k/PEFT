@@ -19,12 +19,18 @@ class Config(object):
                 for key, val in params[group].items():
                     setattr(self, key, val)
 
-
         self.task = args.task
         self.mode = args.mode
+        self.search_method = args.search
         self.ckpt = f"ckpt/{self.task}.pt"
 
-        
+        use_cuda = torch.cuda.is_available()
+        self.device_type = 'cuda' \
+                           if use_cuda and self.mode != 'inference' \
+                           else 'cpu'
+        self.device = torch.device(self.device_type)
+
+
         if self.task == 'nmt':
             self.mname = "Helsinki-NLP/opus-mt-en-de"
         
@@ -35,15 +41,6 @@ class Config(object):
             self.mname = "t5-small"
             self.max_len *= 2
             self.batch_size //= 2
-
-
-        use_cuda = torch.cuda.is_available()
-
-        self.device_type = 'cuda' \
-                           if use_cuda and self.mode != 'inference' \
-                           else 'cpu'
-
-        self.device = torch.device(self.device_type)
 
 
     def print_attr(self):
@@ -84,8 +81,9 @@ def main(args):
     model = load_model(config)
     tokenizer = AutoTokenizer.from_pretrained(
         config.mname, 
-        model_max_length=config.model_max_length
+        model_max_length=config.max_len
     )
+    config.update_attr(tokenizer)
 
 
     if config.mode == 'train':

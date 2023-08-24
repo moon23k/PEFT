@@ -1,4 +1,4 @@
-import math, time, torch, evaluate
+import torch, evaluate
 
 
 
@@ -7,12 +7,13 @@ class Tester:
         super(Tester, self).__init__()
         
         self.model = model
-        self.task = config.task
         self.tokenizer = tokenizer
-        self.device = config.device
         self.dataloader = test_dataloader
-        self.beam_size = config.beam_size
-        self.max_len = 512
+
+        self.task = config.task    
+        self.device = config.device
+        self.max_len = config.max_len
+        
 
         if self.task == 'nmt':
             self.metric_name = 'BLEU'
@@ -22,18 +23,9 @@ class Tester:
             self.metric_module = evaluate.load('rouge')
 
 
-    @staticmethod
-    def measure_time(start_time, end_time):
-        elapsed_time = end_time - start_time
-        elapsed_min = int(elapsed_time / 60)
-        elapsed_sec = int(elapsed_time - (elapsed_min * 60))
-        return f"{elapsed_min}m {elapsed_sec}s"
-
-
     def test(self):
         self.model.eval()        
-        tot_len = len(self.dataloader)
-        greedy_score, beam_score = 0, 0
+        score = 0
 
         print(f'Test Results on {self.task.upper()}')
         with torch.no_grad():
@@ -42,23 +34,17 @@ class Tester:
                 input_ids = batch['input_ids'].to(self.device)
                 labels = batch['labels'].tolist()
         
-                greedy_pred = self.model.generate(
-                    input_ids, do_sample=False,
+                pred = self.model.generate(
+                    input_ids, 
+                    do_sample=False,
                     max_new_tokens=self.max_len, 
                 )
                 
-                beam_pred = self.model.generate(
-                    input_ids, num_beams=self.beam_size, 
-                    max_new_tokens=self.max_len, do_sample=False
-                )
+                score += self.metric_score(pred, labels)
                 
-                greedy_score += self.metric_score(greedy_pred, labels)
-                beam_score += self.metric_score(beam_pred, labels)
+        score = round(score/len(self.dataloader), 2)
         
-        greedy_score = round(greedy_score / tot_len, 2)
-        beam_score = round(beam_score / tot_len, 2)
-        
-        return greedy_score, beam_score
+        return score
         
 
 
@@ -73,27 +59,9 @@ class Tester:
                 references=[[label]]
             )['bleu']
 
-        #For Summarization Task
-        elif self.task == 'sum':        
+        #For Dialgue Generation and Summarization Tasks
+        else:        
             score = self.metric_module.compute(
                 predictions=[pred], 
                 references=[[label]]
             )['rouge2']
-
-        #For Dialogue Generation Task
-        elif self.task == 'dialog':
-            encoding = self.metric_tokenizer(
-                pred, label, 
-                padding=True, 
-                truncation=True, 
-                return_tensors='pt'
-            )
-
-            bert_out = self.metric_model(**encoding)[0]
-
-            normalized = torch.nn.functional.normalize(bert_out[:, 0, :], p=2, dim=-1)
-            dist = normalized.matmul(normalized.T)
-            sim_matrix = dist.new_ones(dist.shape) - dist
-            score = sim_matrix[0, 1].item()
-
-        return (score * 100)

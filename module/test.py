@@ -10,58 +10,49 @@ class Tester:
         self.tokenizer = tokenizer
         self.dataloader = test_dataloader
 
-        self.task = config.task    
+        self.task = config.task
         self.device = config.device
-        self.max_len = config.max_len
+        self.model_type = config.model_type
         
-
-        if self.task == 'nmt':
-            self.metric_name = 'BLEU'
-            self.metric_module = evaluate.load('bleu')
-        else:
-            self.metric_name = 'ROUGE'
-            self.metric_module = evaluate.load('rouge')
+        self.metric_name = 'BLEU' if self.task == 'translation' else 'ROUGE'
+        self.metric_module = evaluate.load(self.metric_name.lower())
+        
 
 
     def test(self):
-        self.model.eval()        
-        score = 0
+        score = 0.0         
+        self.model.eval()
 
-        print(f'Test Results on {self.task.upper()}')
         with torch.no_grad():
             for batch in self.dataloader:
-            
                 input_ids = batch['input_ids'].to(self.device)
-                labels = batch['labels'].tolist()
-        
+                attention_mask = batch['attention_mask'].to(self.device)
+                y = self.tokenize(batch['y'])
+
                 pred = self.model.generate(
-                    input_ids, 
-                    do_sample=False,
-                    max_new_tokens=self.max_len, 
+                    input_ids=input_ids, attention_mask=attention_mask
                 )
-                
-                score += self.metric_score(pred, labels)
-                
-        score = round(score/len(self.dataloader), 2)
-        
-        return score
-        
+                pred = self.tokenizer.batch_decode(pred)
+                score += self.evaluate(pred, y)
+
+        txt = f"TEST Result on {self.task.upper()} with {self.model_type.upper()} model"
+        txt += f"\n-- Score: {round(score/len(self.dataloader), 2)}\n"
+        print(txt)
 
 
-    def metric_score(self, pred, label):
-        pred = self.tokenizer.batch_decode(pred, skip_special_tokens=True)[0]
-        label = self.tokenizer.batch_decode(label, skip_special_tokens=True)[0]
 
-        #For Translation Task
-        if self.task == 'nmt':
+    def evaluate(self, pred, label):
+        #For NMT Evaluation
+        if self.task == 'translation':
             score = self.metric_module.compute(
-                predictions=[pred], 
-                references=[[label]]
+                predictions=pred, 
+                references =[[l] for l in label]
             )['bleu']
-
-        #For Dialgue Generation and Summarization Tasks
-        else:        
+        #For Dialg & Sum Evaluation
+        else:
             score = self.metric_module.compute(
-                predictions=[pred], 
-                references=[[label]]
+                predictions=pred, 
+                references =[[l] for l in label]
             )['rouge2']
+
+        return score * 100

@@ -19,12 +19,10 @@ class Dataset(torch.utils.data.Dataset):
         return len(self.data)
     
     def __getitem__(self, idx):
-        src = self.data[idx]['src']
-        trg = self.data[idx]['trg']
+        x = self.data[idx]['x']
+        y = self.data[idx]['y']
 
-        if self.task == 'sum':
-            return src, 'summarize: ' + trg
-        return src, trg
+        return x, y
 
 
 
@@ -35,40 +33,36 @@ class Collator(object):
         self.pad_id = tokenizer.pad_token_id
 
     def __call__(self, batch):
-        src_batch, trg_batch = zip(*batch)
+        x_batch, y_batch = zip(*batch)
 
-        src_tokenized = self.tokenizer(
-            src_batch, 
+        x_encodings = self.tokenizer(
+            x_batch, 
             padding=True, 
             truncation=True, 
             return_tensors='pt'
         )
 
-        labels = self.tokenizer(
+        y_encodings = self.tokenizer(
             trg_batch, 
             padding=True, 
             truncation=True, 
             return_tensors='pt'
         ).input_ids
-        
-        if self.task == 'sum':
-            labels[labels==self.pad_id] = -100
 
-        return {'input_ids': src_tokenized.input_ids, 
-                'attention_mask': src_tokenized.attention_mask,
+        labels = y_encodings.input_ids        
+        labels[labels==self.pad_id] = -100
+
+        return {'input_ids': x_encodings.input_ids, 
+                'attention_mask': x_encodings.attention_mask,
                 'labels': labels}
 
 
 
 def load_dataloader(config, tokenizer, split):
-    is_train = split == 'train'
-    batch_size = config.batch_size if is_train \
-                 else config.batch_size // 4
-
     return DataLoader(
         Dataset(config.task, split), 
-        batch_size=batch_size, 
-        shuffle=True if is_train else False,
+        batch_size=config.batch_size, 
+        shuffle=split == 'train',
         collate_fn=Collator(config, tokenizer),
         pin_memory=True,
         num_workers=2

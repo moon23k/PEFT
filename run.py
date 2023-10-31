@@ -3,7 +3,7 @@ from transformers import set_seed, AutoTokenizer
 from module import (
     load_dataloader,
     load_model,
-    Trainer, 
+    Trainer,
     Tester
 ) 
 
@@ -21,26 +21,15 @@ class Config(object):
 
         self.task = args.task
         self.mode = args.mode
+        self.peft = args.peft
         self.search_method = args.search
-        self.ckpt = f"ckpt/{self.task}.pt"
+        self.ckpt = f"ckpt/{self.peft}_model.pt"
 
         use_cuda = torch.cuda.is_available()
         self.device_type = 'cuda' \
                            if use_cuda and self.mode != 'inference' \
                            else 'cpu'
         self.device = torch.device(self.device_type)
-
-
-        if self.task == 'nmt':
-            self.mname = "Helsinki-NLP/opus-mt-en-de"
-        
-        elif self.task == 'dialog':
-            self.mname = "facebook/blenderbot_small-90M"
-        
-        elif self.task == 'sum':
-            self.mname = "t5-small"
-            self.max_len *= 2
-            self.batch_size //= 2
 
 
     def print_attr(self):
@@ -52,6 +41,7 @@ class Config(object):
 
 
 def inference(config, model, tokenizer):
+    model.eval()
     print(f'--- Inference Process Started! ---')
     print('[ Type "quit" on user input to stop the Process ]')
     
@@ -67,10 +57,11 @@ def inference(config, model, tokenizer):
         input_ids = tokenizer(input_seq, return_tensors='pt').to(config.device)
 
         #Search Output Sequence
-        if config.search_method == 'greedy':
-            output_seq = model.generate(input_ids)
-        else:
-            output_seq = model.generate(input_ids, num_beams=config.num_beams)
+        with torch.no_grad():
+            if config.search_method == 'greedy':
+                output_seq = model.generate(input_ids)
+            else:
+                output_seq = model.generate(input_ids, num_beams=config.num_beams)[0]
         print(f"Model Out Sequence >> {output_seq}")       
 
 
@@ -107,13 +98,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-task', required=True)
     parser.add_argument('-mode', required=True)
+    parser.add_argument('-peft', required=True)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.task in ['nmt', 'dialog', 'sum']
-    assert args.mode in ['train', 'test', 'inference']
-
-    if args.task == 'inference':
-        assert args.search in ['greedy', 'beam']
+    assert args.task.loewr() in ['translation', 'dialogue', 'summarization']
+    assert args.mode.loewr() in ['train', 'test', 'inference']
+    assert args.peft.loewr() in ['lora', 'p_tuning', 'prompt_tuning', 'prefix_tuning', 'ia3']
+    assert args.search.loewr() in ['greedy', 'beam']
 
     main(args)

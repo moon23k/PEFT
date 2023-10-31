@@ -1,11 +1,6 @@
 import os, torch
 from transformers import (
-    MarianConfig, 
-    MarianMTModel,
-    T5Config, 
-    T5ForConditionalGeneration, 
-    BlenderbotSmallConfig, 
-    BlenderbotSmallForConditionalGeneration
+    T5ForConditionalGeneration
 )
 
 
@@ -33,36 +28,11 @@ def load_model(config):
 
     mname = config.mname
 
-    if config.mode == 'train':
-        if config.task == 'nmt':
-            model = MarianMTModel.from_pretrained(mname)
-        elif config.task == 'dialog':
-            model = BlenderbotSmallForConditionalGeneration.from_pretrained(mname)
-        elif config.task == 'sum':
-            model = T5ForConditionalGeneration.from_pretrained(mname) 
+    model = T5ForConditionalGeneration.from_pretrained(mname) 
 
-        print(f"Pretrained {config.mname} model has loaded")
-        print_model_desc(model)
-    
-        return model.to(config.device)
-    
-
-    if config.task == 'nmt':
-        model_config = MarianConfig.from_pretrained(mname)
-        model = MarianMTModel(model_config)
-    elif config.task == 'dialog':
-        model_config = BlenderbotSmallConfig.from_pretrained(mname)
-        model = BlenderbotSmallForConditionalGeneration(model_config)
-    elif config.task == 'sum':
-        model_config = T5Config.from_pretrained(mname)
-        model = T5ForConditionalGeneration(model_config)
-
-    assert os.path.exists(config.ckpt)
-    model_state = torch.load(
-        config.ckpt, 
-        map_location=config.device
-    )['model_state_dict']
-    
-    print(f"FineTuned {config.mname} model has loaded")
+    print(f"Pretrained {config.mname} model has loaded")
     print_model_desc(model)
+        
+
+
     return model.to(config.device)

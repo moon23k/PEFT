@@ -29,9 +29,7 @@ class Tester:
                 attention_mask = batch['attention_mask'].to(self.device)
                 y = self.tokenize(batch['y'])
 
-                pred = self.model.generate(
-                    input_ids=input_ids, attention_mask=attention_mask
-                )
+                pred = self.model.generate(input_ids=input_ids, attention_mask=attention_mask)
                 pred = self.tokenizer.batch_decode(pred)
                 score += self.evaluate(pred, y)
 

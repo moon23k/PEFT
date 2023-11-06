@@ -19,17 +19,15 @@ class Config(object):
                 for key, val in params[group].items():
                     setattr(self, key, val)
 
-        self.task = args.task
         self.mode = args.mode
         self.peft = args.peft
         self.search_method = args.search
         self.ckpt = f"ckpt/{self.peft}_model.pt"
 
-        use_cuda = torch.cuda.is_available()
-        self.device_type = 'cuda' \
-                           if use_cuda and self.mode != 'inference' \
-                           else 'cpu'
-        self.device = torch.device(self.device_type)
+        device_type = 'cuda' if torch.cuda.is_available() \
+                      and self.mode != 'inference' else 'cpu'
+        self.device_type = device_type
+        self.device = torch.device(device_type)
 
 
     def print_attr(self):
@@ -96,13 +94,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-task', required=True)
     parser.add_argument('-mode', required=True)
     parser.add_argument('-peft', required=True)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.task.loewr() in ['translation', 'dialogue', 'summarization']
     assert args.mode.loewr() in ['train', 'test', 'inference']
     assert args.peft.loewr() in ['lora', 'p_tuning', 'prompt_tuning', 'prefix_tuning', 'ia3']
     assert args.search.loewr() in ['greedy', 'beam']

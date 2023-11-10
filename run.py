@@ -22,7 +22,7 @@ class Config(object):
         self.mode = args.mode
         self.peft = args.peft
         self.search_method = args.search
-        self.ckpt = f"ckpt/{self.peft}_model.pt"
+        self.ckpt = f"ckpt/{self.peft}"
 
         device_type = 'cuda' if torch.cuda.is_available() \
                       and self.mode != 'inference' else 'cpu'
@@ -103,4 +103,5 @@ if __name__ == '__main__':
     assert args.peft.loewr() in ['lora', 'p_tuning', 'prompt_tuning', 'prefix_tuning', 'ia3']
     assert args.search.loewr() in ['greedy', 'beam']
 
+    os.makedirs.exists(f'ckpt/{args.peft}', exist_ok=True)
     main(args)

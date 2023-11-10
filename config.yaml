@@ -1,6 +1,6 @@
 model:
     max_len: 512
-    mname: "t5-base"
+    mname: "t5-small"
 
 train:
     n_epochs: 10
@@ -10,3 +10,7 @@ train:
     patience: 3
     clip: 1
     iters_to_accumulate: 4
+
+peft:
+    num_virtual_tokens: 20
+    encoder_hidden_size: 128

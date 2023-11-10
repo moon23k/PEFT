@@ -2,54 +2,48 @@ import os, torch
 from transformers import T5ForConditionalGeneration
 from peft import (
     TaskType,
+    PeftModel,
     get_peft_config, 
     get_peft_model, 
-    get_peft_model_state_dict, 
-
-    LoraConfig, 
-    PrefixTuningConfig, 
-    AutoPeftModel
+    LoraConfig,
+    PrefixTuningConfig,
+    PromptTuningConfig,
+    PromptEncoderConfig
 )
 
 
 
 
-def get_peft_config(config):
-
+def set_peft_config(config):
+    peft_args = {'task_type':TaskType.SEQ_2_SEQ_LM,
+                 'inference_mode': False}
+    
     if config.peft == 'lora':
-        peft_config = LoraConfig()
-    
-    elif config.peft == 'prefix_tuning':
-        peft_config = PrefixTuningConfig()
-    
+        peft_config = LoraConfig(**peft_args)
+    elif config.peft == 'prefix':
+        peft_args['num_virtual_tokens'] = config.num_virtual_tokens
+        peft_config = PrefixTuningConfig(**peft_args)        
+    elif config.peft == 'prompt':
+        peft_args['num_virtual_tokens'] = config.num_virtual_tokens
+        peft_config = PromptTuningConfig(**peft_args)
     elif config.peft == 'p_tuning':
-        peft_config = pass
-    
-    elif config.peft == 'prompt_tuning':
-        peft_config = pass    
-    
-    elif config.peft == 'ia3':
-        peft_config = pass
+        peft_args['num_virtual_tokens'] = config.num_virtual_tokens
+        peft_args['encoder_hidden_size'] = config.encoder_hidden_size
+        peft_config = PromptEncoderConfig(**peft_args)
 
-    return peft_config
-
+    return peft_args
 
 
 
 def load_model(config):
-    mname = config.mname
 
-    if config.task == 'train':
+    model = T5ForConditionalGeneration.from_pretrained(config.mname)
 
-        model = T5ForConditionalGeneration.from_pretrained(mname) 
-        print(f"Pretrained {config.mname} model has loaded")
-
-        peft_config = get_peft_model(config)
+    if config.mode == 'train':
+        peft_config = set_peft_config(config)
         model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
-
-        return model.to(config.device)
-
     else:
-        model = AutoPeftModel(config.ckpt)
-        return model.to(config.device)
+        model = PeftModel(model, config.ckpt)
+
+    return model.to(config.device)        

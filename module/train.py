@@ -15,7 +15,7 @@ class Trainer:
         self.clip = config.clip
         self.device = config.device
         self.n_epochs = config.n_epochs
-        self.vocab_size = config.vocab_size
+        self.vocab_size = model.config.vocab_size
 
         self.scaler = torch.cuda.amp.GradScaler()
         self.iters_to_accumulate = config.iters_to_accumulate        
@@ -30,7 +30,7 @@ class Trainer:
         self.patience = config.patience        
 
         self.ckpt = config.ckpt
-        self.record_path = self.ckpt.replace('.pt', '.json')
+        self.record_path = f"ckpt/report/{config.peft}.json"
         self.record_keys = ['epoch', 'train_loss', 'train_ppl', 'valid_loss', 
                             'valid_ppl', 'learning_rate', 'train_time']
 
@@ -76,10 +76,7 @@ class Trainer:
             #save best model
             if best_loss > val_loss:
                 best_loss = val_loss
-                torch.save({'epoch': epoch,
-                            'model_state_dict': self.model.state_dict(),
-                            'optimizer_state_dict': self.optimizer.state_dict()},
-                            self.ckpt)
+                self.model.save_pretrained(self.ckpt)
             
             #Early Stopping Process
             if self.early_stop:
@@ -105,7 +102,7 @@ class Trainer:
         epoch_loss = 0
 
         for idx, batch in enumerate(self.train_dataloader):
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch = {k: v.to(self.device) for k, v in batch.items()}
 
             with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                 loss = self.model(**batch).loss
@@ -139,7 +136,7 @@ class Trainer:
         
         with torch.no_grad():
             for batch in self.valid_dataloader:
-                batch = {k: v.to(device) for k, v in batch.items()}
+                batch = {k: v.to(self.device) for k, v in batch.items()}
                 
                 loss = self.model(**batch).loss
                 epoch_loss += loss.item()

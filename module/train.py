@@ -1,147 +1,57 @@
-import time, math, json, torch
-import torch.nn as nn
-import torch.amp as amp
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+import json, torch, evaluate
+import numpy as np
+from transformers import (
+    AutoModelForSequenceClassification,
+    TrainingArguments,
+    Trainer,
+    DataCollatorWithPadding
+)
 
 
 
 
-class Trainer:
-    def __init__(self, config, model, train_dataloader, valid_dataloader):
-        super(Trainer, self).__init__()
-        
-        self.model = model
-        self.clip = config.clip
-        self.device = config.device
-        self.n_epochs = config.n_epochs
-        self.vocab_size = model.config.vocab_size
+def set_trainer(config, model, tokenizer, train_dataset, valid_dataset):
 
-        self.scaler = torch.cuda.amp.GradScaler()
-        self.iters_to_accumulate = config.iters_to_accumulate        
+    training_args = TrainingArguments(
 
-        self.train_dataloader = train_dataloader
-        self.valid_dataloader = valid_dataloader
+        output_dir= config.ckpt,
+        num_train_epochs= config.n_epochs,
+        learning_rate= config.lr,
+        per_device_train_batch_size= config.batch_size,
+        per_device_eval_batch_size= config.batch_size,
+        lr_scheduler_type='reduce_lr_on_plateau',
+        load_best_model_at_end= True,
 
-        self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
-        self.scheduler = ReduceLROnPlateau(self.optimizer, patience=2)
+        save_strategy= 'epoch',
+        logging_strategy= 'epoch',
+        evaluation_strategy= 'epoch',
 
-        self.early_stop = config.early_stop
-        self.patience = config.patience        
-
-        self.ckpt = config.ckpt
-        self.record_path = f"ckpt/report/{config.peft}.json"
-        self.record_keys = ['epoch', 'train_loss', 'train_ppl', 'valid_loss', 
-                            'valid_ppl', 'learning_rate', 'train_time']
+        fp16= True,
+        fp16_opt_level= '02',
+        gradient_accumulation_steps = 4,
+        gradient_checkpointing= True,
+        optim = 'adafactor'
+    )
 
 
-    def print_epoch(self, record_dict):
-        print(f"""Epoch {record_dict['epoch']}/{self.n_epochs} | \
-              Time: {record_dict['train_time']}""".replace(' ' * 14, ''))
-        
-        print(f"""  >> Train Loss: {record_dict['train_loss']:.3f} | \
-              Train PPL: {record_dict['train_ppl']:.2f}""".replace(' ' * 14, ''))
+    accuracy = evaluate.load("accuracy")
+    def compute_metrics(eval_pred):
 
-        print(f"""  >> Valid Loss: {record_dict['valid_loss']:.3f} | \
-              Valid PPL: {record_dict['valid_ppl']:.2f}\n""".replace(' ' * 14, ''))
+        predictions, labels = eval_pred
+        predictions = np.argmax(predictions, axis=1)
+
+        return accuracy.compute(predictions=predictions, references=labels)
 
 
-    @staticmethod
-    def measure_time(start_time, end_time):
-        elapsed_time = end_time - start_time
-        elapsed_min = int(elapsed_time / 60)
-        elapsed_sec = int(elapsed_time - (elapsed_min * 60))
-        return f"{elapsed_min}m {elapsed_sec}s"
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=valid_dataset,
+        tokenizer=tokenizer,
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
+        compute_metrics=compute_metrics
+    )
 
 
-    def train(self):
-        records = []
-        prev_loss, best_loss = float('inf'), float('inf')
-        patience = self.patience
-
-        for epoch in range(1, self.n_epochs + 1):
-            start_time = time.time()
-
-            record_vals = [epoch, *self.train_epoch(), *self.valid_epoch(), 
-                           self.optimizer.param_groups[0]['lr'],
-                           self.measure_time(start_time, time.time())]
-            record_dict = {k: v for k, v in zip(self.record_keys, record_vals)}
-            
-            records.append(record_dict)
-            self.print_epoch(record_dict)
-            
-            val_loss = record_dict['valid_loss']
-            self.scheduler.step(val_loss)
-
-            #save best model
-            if best_loss > val_loss:
-                best_loss = val_loss
-                self.model.save_pretrained(self.ckpt)
-            
-            #Early Stopping Process
-            if self.early_stop:
-                if prev_loss > val_loss:
-                    patience = self.patience
-            
-                else:
-                    patience -= 1
-                    if not patience:
-                        print('--- Training Ealry Stopped ---\n')
-                        break
-
-                prev_loss = val_loss
-
-            
-        #save train_records
-        with open(self.record_path, 'w') as fp:
-            json.dump(records, fp)
-
-
-    def train_epoch(self):
-        self.model.train()
-        epoch_loss = 0
-
-        for idx, batch in enumerate(self.train_dataloader):
-            batch = {k: v.to(self.device) for k, v in batch.items()}
-
-            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
-                loss = self.model(**batch).loss
-                loss = loss / self.iters_to_accumulate
-
-            #Backward Loss
-            self.scaler.scale(loss).backward()        
-            
-            if (idx + 1) % self.iters_to_accumulate == 0:
-
-                #Gradient Clipping
-                self.scaler.unscale_(self.optimizer)
-                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
-                
-                #Gradient Update & Scaler Update
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                self.optimizer.zero_grad()
-
-            epoch_loss += loss.item()
-        
-        epoch_loss = round(epoch_loss / len(self.train_dataloader), 3)
-        epoch_ppl = round(math.exp(epoch_loss), 3)  
-
-        return epoch_loss, epoch_ppl
-    
-
-    def valid_epoch(self):
-        self.model.eval()
-        epoch_loss = 0
-        
-        with torch.no_grad():
-            for batch in self.valid_dataloader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
-                
-                loss = self.model(**batch).loss
-                epoch_loss += loss.item()
-        
-        epoch_loss = round(epoch_loss / len(self.valid_dataloader), 3)
-        epoch_ppl = round(math.exp(epoch_loss), 3)        
-
-        return epoch_loss, epoch_ppl
+    return trainer    

@@ -1,4 +1,3 @@
-from .data import load_dataloader
+from .data import load_dataset
 from .model import load_model
-from .train import Trainer
-from .test import Tester
+from .train import set_trainer

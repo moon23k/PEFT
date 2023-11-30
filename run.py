@@ -1,107 +1,106 @@
-import os, yaml, argparse, torch
+import os, json, argparse, torch
 from transformers import set_seed, AutoTokenizer
-from module import (
-    load_dataloader,
-    load_model,
-    Trainer,
-    Tester
-) 
+from module import load_model, load_dataset, set_trainer
 
 
 
 
 class Config(object):
-    def __init__(self, args):
+    def __init__(self, peft):
 
-        with open('config.yaml', 'r') as f:
-            params = yaml.load(f, Loader=yaml.FullLoader)
-            for group in params.keys():
-                for key, val in params[group].items():
-                    setattr(self, key, val)
+        self.peft = peft
+        self.mname = 'bert-base-uncased'
+        
+        self.lr = 1e-5
+        self.n_epochs = 5
+        self.batch_size = 32
+        self.max_len = 512
+        self.num_labels = 4
 
-        self.mode = args.mode
-        self.peft = args.peft
-        self.search_method = args.search
-        self.ckpt = f"ckpt/{self.peft}"
+        self.num_virtual_tokens = 10
+        self.encoder_hidden_size = 128
 
-        device_type = 'cuda' if torch.cuda.is_available() \
-                      and self.mode != 'inference' else 'cpu'
-        self.device_type = device_type
-        self.device = torch.device(device_type)
+        self.ckpt = f"ckpt/{peft}"
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+
+    def update_param_info(self, model):
+        all_params = 0
+        trainable_params = 0
+        
+        for _, param in model.named_parameters():
+            all_params += param.numel()
+            if param.requires_grad:
+                trainable_params += param.numel()
+        
+        setattr(self, 'all_params', all_params)
+        setattr(self, 'trainable_params', trainable_params)
+        setattr(self, 'trainable_perc', round(100 * trainable_params / all_params, 2))
 
 
     def print_attr(self):
         for attribute, value in self.__dict__.items():
             print(f"* {attribute}: {value}")
+            
 
 
+def main(peft):
 
-
-
-def inference(config, model, tokenizer):
-    model.eval()
-    print(f'--- Inference Process Started! ---')
-    print('[ Type "quit" on user input to stop the Process ]')
-    
-    while True:
-        input_seq = input('\nUser Input Sequence >> ').lower()
-
-        #End Condition
-        if input_seq == 'quit':
-            print('\n--- Inference Process has terminated! ---')
-            break        
-
-        #convert user input_seq into model input_ids
-        input_ids = tokenizer(input_seq, return_tensors='pt').to(config.device)
-
-        #Search Output Sequence
-        with torch.no_grad():
-            if config.search_method == 'greedy':
-                output_seq = model.generate(input_ids)
-            else:
-                output_seq = model.generate(input_ids, num_beams=config.num_beams)[0]
-        print(f"Model Out Sequence >> {output_seq}")       
-
-
-
-def main(args):
+    #Prerequisites
     set_seed(42)
-    config = Config(args)
-    model = load_model(config)
+    config = Config(peft)
+    model, param_dict = load_model(config)
     tokenizer = AutoTokenizer.from_pretrained(
-        config.mname, 
-        model_max_length=config.max_len
+        config.mname, model_max_length=config.max_len
     )
-    config.update_attr(tokenizer)
 
+    #Load datasets
+    train_dataset = load_dataset(tokenizer, 'train')
+    valid_dataset = load_dataset(tokenizer, 'valid')
+    test_dataset = load_dataset(tokenizer, 'test')
 
-    if config.mode == 'train':
-        train_dataloader = load_dataloader(config, tokenizer, 'train')
-        valid_dataloader = load_dataloader(config, tokenizer, 'valid')
-        trainer = Trainer(config, model, train_dataloader, valid_dataloader)
-        trainer.train()
-
-
-    if config.mode == 'test':
-        test_dataloader = load_dataloader(config, tokenizer, 'test')
-        tester = Tester(config, model, test_dataloader, tokenizer)
-        tester.test()
+    #Load Trainer
+    trainer = set_trainer(config, model, tokenizer, train_dataset, valid_dataset)    
     
-    elif config.mode == 'inference':
-        inference(config, model, tokenizer)
+    #Training
+    torch.cuda.reset_max_memory_allocated()
+    train_output = trainer.train()
+    train_metrics = train_output.metrics
+    gpu_memory = torch.cuda.memory_allocated()
+    gpu_max_memory = torch.cuda.max_memory_allocated()
+    
+    #Evaluating
+    eval_output = trainer.evaluate(test_dataset)
+
+    report = {
+        'all_params': param_dict['all_params'],
+        'trainable_params': param_dict['trainable_params'],
+        'trainable_perc': param_dict['trainable_perc'],
+        'num_epochs': train_metrics['epoch'],
+        'train_time': round(train_metrics['train_runtime'], 1),
+        'train_samples_per_second': round(train_metrics['train_samples_per_second'], 1),
+        'train_loss': round(train_metrics['train_loss'], 2),
+        'accuracy': eval_output['eval_accuracy'],
+        'gpu_memory': f"{gpu_memory / (1024 ** 3):.2f} GB",
+        'gpu_max_memory': f"{gpu_max_memory / (1024 ** 3):.2f} GB",
+    }
+
+    with open(f"report/{peft}.json", 'w') as f:
+        json.dump(report, f)
         
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-mode', required=True)
     parser.add_argument('-peft', required=True)
-    parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.mode.loewr() in ['train', 'test', 'inference']
-    assert args.peft.loewr() in ['lora', 'p_tuning', 'prompt_tuning', 'prefix_tuning', 'ia3']
-    assert args.search.loewr() in ['greedy', 'beam']
+    assert args.peft.lower() in [
+        'vanilla', 'prompt_tuning', 
+        'prefix_tuning', 'p_tuning', 
+        'lora', 'ia3'
+    ]
 
-    os.makedirs.exists(f'ckpt/{args.peft}', exist_ok=True)
-    main(args)
+    os.makedirs(f'ckpt/{args.peft}', exist_ok=True)
+    main(args.peft)
